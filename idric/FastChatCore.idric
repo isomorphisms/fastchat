@@ -637,6 +637,13 @@ request_attempt_for wanted (core_state _ _ requests _ _ _) =
     Nothing ⇒ Nothing
 
 public export
+request_attempt_is : request_id → attempt_id → chat_core → Bool
+request_attempt_is wanted expected core =
+  case request_attempt_for wanted core of
+    Just actual ⇒ same_attempt actual expected
+    Nothing ⇒ False
+
+public export
 request_is_completed : request_id → chat_core → Bool
 request_is_completed wanted core =
   case request_phase_for wanted core of
