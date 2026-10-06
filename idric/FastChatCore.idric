@@ -46,9 +46,10 @@ choice model_event one_of
 
 public export
 choice conversation_event one_of
-  user_submitted request_id attempt_id Text
+  user_submitted request_id Text
   user_attached request_id attachment_id Text
-  retry_submitted request_id attempt_id
+  retry_requested request_id
+  transport_attempt_submitted request_id attempt_id
   model_started request_id attempt_id
   model_chunk request_id attempt_id Text
   model_tool request_id attempt_id Text
@@ -224,8 +225,10 @@ submit_request prompt
               []
           updated_log =
             append_event
-              (user_submitted request_key attempt_key prompt)
-              log
+              (transport_attempt_submitted request_key attempt_key)
+              (append_event
+                (user_submitted request_key prompt)
+                log)
           updated_core =
             core_state
               authority_id
@@ -552,7 +555,7 @@ retry_entry new_attempt
             submitted_phase
             payload
             [])
-          (retry_submitted request_key new_attempt)
+          (transport_attempt_submitted request_key new_attempt)
       _ ⇒ retry_unchanged entry "retry requires an uncertain delivery state"
 
 retry_in_requests :
