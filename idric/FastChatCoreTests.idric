@@ -26,7 +26,7 @@ two_requests_test =
              not (same_attempt first_attempt second_attempt) &&
              request_is_completed first_request finished &&
              request_is_completed second_request finished &&
-             log_size finished ≟ 8
+             log_size finished ≟ 10
 
 independent_views_test : Bool
 independent_views_test =
@@ -49,9 +49,9 @@ independent_views_test =
             observed _ repeated_first_events ⇒
               case read_view second_view (core_log finished) of
                 observed _ second_events ⇒
-                  event_count first_events ≟ 4 &&
+                  event_count first_events ≟ 5 &&
                   event_count repeated_first_events ≟ 0 &&
-                  event_count second_events ≟ 4
+                  event_count second_events ≟ 5
 
 completion_wins_cancellation_race_test : Bool
 completion_wins_cancellation_race_test =
@@ -78,7 +78,7 @@ completion_wins_cancellation_race_test =
               (cancelled_for outbound)
               completed
       in request_is_completed request_key late_cancel &&
-         log_size late_cancel ≟ 4 &&
+         log_size late_cancel ≟ 5 &&
          diagnostic_count late_cancel ≟ 1
 
 uncertain_delivery_requires_explicit_retry_test : Bool
@@ -109,7 +109,7 @@ uncertain_delivery_requires_explicit_retry_test =
                in not (same_attempt old_attempt new_attempt) &&
                   request_is_completed request_key finished &&
                   request_attempt_is request_key new_attempt finished &&
-                  log_size finished ≟ 8 &&
+                  log_size finished ≟ 10 &&
                   diagnostic_count finished ≟ 1
 
 all_tests : Bool
