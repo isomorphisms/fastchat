@@ -1,0 +1,45 @@
+name: Idriç conversation core
+
+on:
+  pull_request:
+    paths:
+      - 'idric/**'
+      - '.github/workflows/idric-core.yml'
+  push:
+    paths:
+      - 'idric/**'
+      - '.github/workflows/idric-core.yml'
+
+jobs:
+  source-semantics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout FastChat
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          path: fastchat
+          persist-credentials: false
+
+      - name: Checkout pinned Idriç compiler
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: isomorphisms/Idric
+          ref: ff4d852862a3942592f8ade9afde8d409d9803be
+          path: Idric
+          persist-credentials: false
+
+      - name: Bootstrap pinned Idriç
+        working-directory: Idric
+        run: ./edric bootstrap
+
+      - name: Typecheck FastChat core
+        working-directory: fastchat/idric
+        run: |
+          ../../Idric/idris2 --check FastChatCore.idric
+          ../../Idric/idris2 --check FastChatCoreTests.idric
+
+      - name: Run semantic fixtures
+        working-directory: fastchat/idric
+        run: |
+          ../../Idric/idris2 --exec main FastChatCoreTests.idric | tee /tmp/fastchat-idric.txt
+          grep -Fx 'PASS fastchat idric core' /tmp/fastchat-idric.txt
