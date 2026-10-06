@@ -36,14 +36,20 @@ jobs:
         working-directory: Idric
         run: ./edric bootstrap
 
-      - name: Typecheck FastChat core
-        working-directory: fastchat/idric
+      - name: Stage FastChat sources in the Idriç acceptance harness
         run: |
-          ../../Idric/idris2 --check FastChatCore.idric
-          ../../Idric/idris2 --check FastChatCoreTests.idric
+          set -eu
+          fixture=Idric/_/tests/idris2/basic/fastchat-core
+          mkdir -p "$fixture"
+          cp fastchat/idric/FastChatCore.idric "$fixture/FastChatCore.idric"
+          cp fastchat/idric/FastChatCoreTests.idric "$fixture/FastChatCoreTests.idric"
+          cat > "$fixture/run" <<'EOF'
+          . ../../../testutils.sh
+          check FastChatCore.idric
+          run FastChatCoreTests.idric
+          EOF
+          printf '%s\n' 'PASS fastchat idric core' > "$fixture/expected"
 
-      - name: Run semantic fixtures
-        working-directory: fastchat/idric
-        run: |
-          ../../Idric/idris2 --exec main FastChatCoreTests.idric | tee /tmp/fastchat-idric.txt
-          grep -Fx 'PASS fastchat idric core' /tmp/fastchat-idric.txt
+      - name: Typecheck and execute semantic fixtures
+        working-directory: Idric
+        run: ./edric test --only idris2/basic/fastchat-core
