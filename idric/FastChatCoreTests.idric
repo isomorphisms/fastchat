@@ -112,8 +112,27 @@ uncertain_delivery_requires_explicit_retry_test =
                   log_size finished ≟ 10 &&
                   diagnostic_count finished ≟ 1
 
+typed_command_boundary_test : Bool
+typed_command_boundary_test =
+  let initial =
+        empty_core
+          (authority 9)
+          (conversation 9)
+  in case apply_user_command (send_text "boundary") initial of
+    core_effects after_send
+      [start_model outbound@(send_to _ _ request_key attempt_key _)] ⇒
+        case apply_user_command (cancel request_key) after_send of
+          core_effects after_cancel
+            [cancel_model_attempt cancelled_request cancelled_attempt] ⇒
+              same_request request_key cancelled_request &&
+              same_attempt attempt_key cancelled_attempt &&
+              log_size after_cancel ≟ 3
+          _ ⇒ False
+    _ ⇒ False
+
 all_tests : Bool
 all_tests =
+  typed_command_boundary_test &&
   two_requests_test &&
   independent_views_test &&
   completion_wins_cancellation_race_test &&
