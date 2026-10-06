@@ -1,0 +1,126 @@
+module FastChatCoreTests
+
+import FastChatCore
+
+two_requests_test : Bool
+two_requests_test =
+  let initial =
+        empty_core
+          (authority 1)
+          (conversation 1)
+  in case submit_request "first" initial of
+    submitted_request after_first first_request first_attempt first_outbound ⇒
+      case submit_request "second" after_first of
+        submitted_request after_second second_request second_attempt second_outbound ⇒
+          let interleaved =
+                [ started_for first_outbound
+                , started_for second_outbound
+                , chunk_for first_outbound "first answer"
+                , chunk_for second_outbound "second answer"
+                , completed_for second_outbound
+                , completed_for first_outbound
+                ]
+              finished =
+                run_transport_events interleaved after_second
+          in not (same_request first_request second_request) &&
+             not (same_attempt first_attempt second_attempt) &&
+             request_is_completed first_request finished &&
+             request_is_completed second_request finished &&
+             log_size finished ≟ 8
+
+independent_views_test : Bool
+independent_views_test =
+  let conversation_key = conversation 2
+      initial =
+        empty_core
+          (authority 1)
+          conversation_key
+  in case submit_request "one shared history" initial of
+    submitted_request after_submit request_key attempt_key outbound ⇒
+      let finished =
+            run_transport_events
+              (simulate_success outbound)
+              after_submit
+          first_view = open_view (view 1) conversation_key
+          second_view = open_view (view 2) conversation_key
+      in case read_view first_view (core_log finished) of
+        observed advanced_first first_events ⇒
+          case read_view advanced_first (core_log finished) of
+            observed _ repeated_first_events ⇒
+              case read_view second_view (core_log finished) of
+                observed _ second_events ⇒
+                  event_count first_events ≟ 4 &&
+                  event_count repeated_first_events ≟ 0 &&
+                  event_count second_events ≟ 4
+
+completion_wins_cancellation_race_test : Bool
+completion_wins_cancellation_race_test =
+  let initial =
+        empty_core
+          (authority 1)
+          (conversation 3)
+  in case submit_request "race" initial of
+    submitted_request after_submit request_key attempt_key outbound ⇒
+      let started =
+            handle_model_event
+              (started_for outbound)
+              after_submit
+          cancellation_requested_core =
+            request_cancellation
+              request_key
+              started
+          completed =
+            handle_model_event
+              (completed_for outbound)
+              cancellation_requested_core
+          late_cancel =
+            handle_model_event
+              (cancelled_for outbound)
+              completed
+      in request_is_completed request_key late_cancel &&
+         log_size late_cancel ≟ 4 &&
+         diagnostic_count late_cancel ≟ 1
+
+uncertain_delivery_requires_explicit_retry_test : Bool
+uncertain_delivery_requires_explicit_retry_test =
+  let initial =
+        empty_core
+          (authority 1)
+          (conversation 4)
+  in case submit_request "uncertain" initial of
+    submitted_request after_submit request_key old_attempt old_outbound ⇒
+      let uncertain =
+            run_transport_events
+              (simulate_loss_after_chunk old_outbound)
+              after_submit
+      in if not (request_is_uncertain request_key uncertain)
+           then False
+           else case retry_request request_key uncertain of
+             retry_rejected _ _ ⇒ False
+             retry_started after_retry new_attempt new_outbound ⇒
+               let with_stale_observation =
+                     handle_model_event
+                       (chunk_for old_outbound "late stale bytes")
+                       after_retry
+                   finished =
+                     run_transport_events
+                       (simulate_success new_outbound)
+                       with_stale_observation
+               in not (same_attempt old_attempt new_attempt) &&
+                  request_is_completed request_key finished &&
+                  request_attempt_for request_key finished ≟ Just new_attempt &&
+                  log_size finished ≟ 8 &&
+                  diagnostic_count finished ≟ 1
+
+all_tests : Bool
+all_tests =
+  two_requests_test &&
+  independent_views_test &&
+  completion_wins_cancellation_race_test &&
+  uncertain_delivery_requires_explicit_retry_test
+
+main : IO ()
+main =
+  if all_tests
+    then putStrLn "PASS fastchat idric core"
+    else putStrLn "FAIL fastchat idric core"
