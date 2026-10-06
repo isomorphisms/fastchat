@@ -10,6 +10,10 @@ on:
       - 'idric/**'
       - '.github/workflows/idric-core.yml'
 
+concurrency:
+  group: idric-core-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   source-semantics:
     runs-on: ubuntu-latest
