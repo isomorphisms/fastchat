@@ -1,0 +1,739 @@
+module FastChatCore
+
+import Data.Text
+
+public export
+choice conversation_id one_of
+  conversation Number
+
+public export
+choice view_id one_of
+  view Number
+
+public export
+choice request_id one_of
+  request Number
+
+public export
+choice attempt_id one_of
+  attempt Number
+
+public export
+choice attachment_id one_of
+  attachment Number
+
+public export
+choice transport_authority one_of
+  authority Number
+
+public export
+choice request_payload one_of
+  text_prompt Text
+
+public export
+choice model_request one_of
+  send_to transport_authority conversation_id request_id attempt_id request_payload
+
+public export
+choice model_event one_of
+  response_started request_id attempt_id
+  response_chunk request_id attempt_id Text
+  response_tool request_id attempt_id Text
+  response_completed request_id attempt_id
+  response_cancelled request_id attempt_id
+  response_failed request_id attempt_id Text
+  response_connection_lost request_id attempt_id Text
+
+public export
+choice conversation_event one_of
+  user_submitted request_id attempt_id Text
+  user_attached request_id attachment_id Text
+  retry_submitted request_id attempt_id
+  model_started request_id attempt_id
+  model_chunk request_id attempt_id Text
+  model_tool request_id attempt_id Text
+  cancellation_requested request_id attempt_id
+  model_completed request_id attempt_id
+  model_cancelled request_id attempt_id
+  model_failed request_id attempt_id Text
+  model_uncertain request_id attempt_id Text
+
+public export
+choice stored_event one_of
+  stored Number conversation_event
+
+public export
+choice conversation_log one_of
+  event_log conversation_id Number (List stored_event)
+
+public export
+choice request_phase one_of
+  submitted_phase
+  streaming_phase
+  cancellation_pending
+  completed_phase
+  cancelled_phase
+  provider_failed Text
+  delivery_uncertain Text
+
+public export
+choice request_entry one_of
+  request_record request_id attempt_id request_phase request_payload (List Text)
+
+public export
+choice chat_core one_of
+  core_state
+    transport_authority
+    conversation_log
+    (List request_entry)
+    Number
+    Number
+    (List Text)
+
+public export
+choice submission_result one_of
+  submitted_request chat_core request_id attempt_id model_request
+
+public export
+choice retry_result one_of
+  retry_started chat_core attempt_id model_request
+  retry_rejected chat_core Text
+
+choice admission one_of
+  accepted conversation_event request_entry
+  ignored Text request_entry
+
+choice request_list_change one_of
+  request_list_changed (List request_entry) conversation_event
+  request_list_unchanged (List request_entry) Text
+
+choice cancellation_change one_of
+  cancellation_changed request_entry conversation_event
+  cancellation_unchanged request_entry Text
+
+choice retry_change one_of
+  retry_changed request_entry conversation_event
+  retry_unchanged request_entry Text
+
+public export
+choice event_cursor one_of
+  after_sequence Number
+
+public export
+choice view_state one_of
+  observing view_id conversation_id event_cursor
+
+public export
+choice view_read one_of
+  observed view_state (List stored_event)
+
+public export
+same_conversation : conversation_id → conversation_id → Bool
+same_conversation (conversation left) (conversation right) = left ≟ right
+
+public export
+same_request : request_id → request_id → Bool
+same_request (request left) (request right) = left ≟ right
+
+public export
+same_attempt : attempt_id → attempt_id → Bool
+same_attempt (attempt left) (attempt right) = left ≟ right
+
+public export
+empty_core : transport_authority → conversation_id → chat_core
+empty_core authority_id conversation_id =
+  core_state authority_id (event_log conversation_id 1 []) [] 1 1 []
+
+public export
+core_log : chat_core → conversation_log
+core_log (core_state _ log _ _ _ _) = log
+
+public export
+core_conversation : chat_core → conversation_id
+core_conversation (core_state _ (event_log conversation_id _ _) _ _ _ _) =
+  conversation_id
+
+public export
+core_authority : chat_core → transport_authority
+core_authority (core_state authority_id _ _ _ _ _) = authority_id
+
+public export
+log_size : chat_core → Number
+log_size (core_state _ (event_log _ _ events) _ _ _ _) = length events
+
+public export
+diagnostic_count : chat_core → Number
+diagnostic_count (core_state _ _ _ _ _ diagnostics) = length diagnostics
+
+public export
+stored_sequence : stored_event → Number
+stored_sequence (stored sequence _) = sequence
+
+public export
+stored_value : stored_event → conversation_event
+stored_value (stored _ event) = event
+
+append_event : conversation_event → conversation_log → conversation_log
+append_event event (event_log conversation_id next_sequence events) =
+  event_log
+    conversation_id
+    (S next_sequence)
+    (events ++ [stored next_sequence event])
+
+append_core_event : conversation_event → chat_core → chat_core
+append_core_event event
+  (core_state authority_id log requests next_request next_attempt diagnostics) =
+    core_state
+      authority_id
+      (append_event event log)
+      requests
+      next_request
+      next_attempt
+      diagnostics
+
+add_diagnostic : Text → chat_core → chat_core
+add_diagnostic message
+  (core_state authority_id log requests next_request next_attempt diagnostics) =
+    core_state
+      authority_id
+      log
+      requests
+      next_request
+      next_attempt
+      (diagnostics ++ [message])
+
+public export
+submit_request : Text → chat_core → submission_result
+submit_request prompt
+  (core_state
+    authority_id
+    log@(event_log conversation_id _ _)
+    requests
+    next_request
+    next_attempt
+    diagnostics) =
+      let request_key = request next_request
+          attempt_key = attempt next_attempt
+          payload = text_prompt prompt
+          entry =
+            request_record
+              request_key
+              attempt_key
+              submitted_phase
+              payload
+              []
+          updated_log =
+            append_event
+              (user_submitted request_key attempt_key prompt)
+              log
+          updated_core =
+            core_state
+              authority_id
+              updated_log
+              (requests ++ [entry])
+              (S next_request)
+              (S next_attempt)
+              diagnostics
+          outbound =
+            send_to
+              authority_id
+              conversation_id
+              request_key
+              attempt_key
+              payload
+      in submitted_request updated_core request_key attempt_key outbound
+
+public export
+event_request : model_event → request_id
+event_request (response_started request_key _) = request_key
+event_request (response_chunk request_key _ _) = request_key
+event_request (response_tool request_key _ _) = request_key
+event_request (response_completed request_key _) = request_key
+event_request (response_cancelled request_key _) = request_key
+event_request (response_failed request_key _ _) = request_key
+event_request (response_connection_lost request_key _ _) = request_key
+
+public export
+event_attempt : model_event → attempt_id
+event_attempt (response_started _ attempt_key) = attempt_key
+event_attempt (response_chunk _ attempt_key _) = attempt_key
+event_attempt (response_tool _ attempt_key _) = attempt_key
+event_attempt (response_completed _ attempt_key) = attempt_key
+event_attempt (response_cancelled _ attempt_key) = attempt_key
+event_attempt (response_failed _ attempt_key _) = attempt_key
+event_attempt (response_connection_lost _ attempt_key _) = attempt_key
+
+entry_request : request_entry → request_id
+entry_request (request_record request_key _ _ _ _) = request_key
+
+entry_attempt : request_entry → attempt_id
+entry_attempt (request_record _ attempt_key _ _ _) = attempt_key
+
+entry_payload : request_entry → request_payload
+entry_payload (request_record _ _ _ payload _) = payload
+
+public export
+entry_phase : request_entry → request_phase
+entry_phase (request_record _ _ phase _ _) = phase
+
+admit_model_event : model_event → request_entry → admission
+admit_model_event event
+  entry@(request_record request_key attempt_key phase payload chunks) =
+    if not (same_request (event_request event) request_key)
+      then ignored "event belongs to a different request" entry
+      else if not (same_attempt (event_attempt event) attempt_key)
+        then ignored "event belongs to a stale attempt" entry
+        else case event of
+          response_started _ _ ⇒
+            case phase of
+              submitted_phase ⇒
+                accepted
+                  (model_started request_key attempt_key)
+                  (request_record
+                    request_key
+                    attempt_key
+                    streaming_phase
+                    payload
+                    chunks)
+              cancellation_pending ⇒
+                accepted
+                  (model_started request_key attempt_key)
+                  entry
+              _ ⇒ ignored "duplicate or late response start" entry
+          response_chunk _ _ chunk ⇒
+            case phase of
+              streaming_phase ⇒
+                accepted
+                  (model_chunk request_key attempt_key chunk)
+                  (request_record
+                    request_key
+                    attempt_key
+                    streaming_phase
+                    payload
+                    (chunks ++ [chunk]))
+              cancellation_pending ⇒
+                accepted
+                  (model_chunk request_key attempt_key chunk)
+                  (request_record
+                    request_key
+                    attempt_key
+                    cancellation_pending
+                    payload
+                    (chunks ++ [chunk]))
+              _ ⇒ ignored "response chunk outside an active stream" entry
+          response_tool _ _ tool_payload ⇒
+            case phase of
+              streaming_phase ⇒
+                accepted
+                  (model_tool request_key attempt_key tool_payload)
+                  entry
+              cancellation_pending ⇒
+                accepted
+                  (model_tool request_key attempt_key tool_payload)
+                  entry
+              _ ⇒ ignored "tool event outside an active stream" entry
+          response_completed _ _ ⇒
+            case phase of
+              streaming_phase ⇒
+                accepted
+                  (model_completed request_key attempt_key)
+                  (request_record
+                    request_key
+                    attempt_key
+                    completed_phase
+                    payload
+                    chunks)
+              cancellation_pending ⇒
+                accepted
+                  (model_completed request_key attempt_key)
+                  (request_record
+                    request_key
+                    attempt_key
+                    completed_phase
+                    payload
+                    chunks)
+              _ ⇒ ignored "completion outside an active stream" entry
+          response_cancelled _ _ ⇒
+            case phase of
+              streaming_phase ⇒
+                accepted
+                  (model_cancelled request_key attempt_key)
+                  (request_record
+                    request_key
+                    attempt_key
+                    cancelled_phase
+                    payload
+                    chunks)
+              cancellation_pending ⇒
+                accepted
+                  (model_cancelled request_key attempt_key)
+                  (request_record
+                    request_key
+                    attempt_key
+                    cancelled_phase
+                    payload
+                    chunks)
+              _ ⇒ ignored "cancellation outside an active stream" entry
+          response_failed _ _ message ⇒
+            case phase of
+              submitted_phase ⇒
+                accepted
+                  (model_failed request_key attempt_key message)
+                  (request_record
+                    request_key
+                    attempt_key
+                    (provider_failed message)
+                    payload
+                    chunks)
+              streaming_phase ⇒
+                accepted
+                  (model_failed request_key attempt_key message)
+                  (request_record
+                    request_key
+                    attempt_key
+                    (provider_failed message)
+                    payload
+                    chunks)
+              cancellation_pending ⇒
+                accepted
+                  (model_failed request_key attempt_key message)
+                  (request_record
+                    request_key
+                    attempt_key
+                    (provider_failed message)
+                    payload
+                    chunks)
+              _ ⇒ ignored "provider failure after terminal state" entry
+          response_connection_lost _ _ message ⇒
+            case phase of
+              submitted_phase ⇒
+                accepted
+                  (model_uncertain request_key attempt_key message)
+                  (request_record
+                    request_key
+                    attempt_key
+                    (delivery_uncertain message)
+                    payload
+                    chunks)
+              streaming_phase ⇒
+                accepted
+                  (model_uncertain request_key attempt_key message)
+                  (request_record
+                    request_key
+                    attempt_key
+                    (delivery_uncertain message)
+                    payload
+                    chunks)
+              cancellation_pending ⇒
+                accepted
+                  (model_uncertain request_key attempt_key message)
+                  (request_record
+                    request_key
+                    attempt_key
+                    (delivery_uncertain message)
+                    payload
+                    chunks)
+              _ ⇒ ignored "connection loss after terminal state" entry
+
+apply_model_event_to_requests :
+  model_event →
+  List request_entry →
+  request_list_change
+apply_model_event_to_requests event [] =
+  request_list_unchanged [] "event names an unknown request"
+apply_model_event_to_requests event (entry :: rest) =
+  if same_request (event_request event) (entry_request entry)
+    then case admit_model_event event entry of
+      accepted canonical_event updated_entry ⇒
+        request_list_changed (updated_entry :: rest) canonical_event
+      ignored reason unchanged_entry ⇒
+        request_list_unchanged (unchanged_entry :: rest) reason
+    else case apply_model_event_to_requests event rest of
+      request_list_changed updated_rest canonical_event ⇒
+        request_list_changed (entry :: updated_rest) canonical_event
+      request_list_unchanged unchanged_rest reason ⇒
+        request_list_unchanged (entry :: unchanged_rest) reason
+
+public export
+handle_model_event : model_event → chat_core → chat_core
+handle_model_event event
+  core@(core_state
+    authority_id
+    log
+    requests
+    next_request
+    next_attempt
+    diagnostics) =
+      case apply_model_event_to_requests event requests of
+        request_list_changed updated_requests canonical_event ⇒
+          core_state
+            authority_id
+            (append_event canonical_event log)
+            updated_requests
+            next_request
+            next_attempt
+            diagnostics
+        request_list_unchanged _ reason ⇒
+          add_diagnostic reason core
+
+cancel_entry : request_entry → cancellation_change
+cancel_entry entry@(request_record request_key attempt_key phase payload chunks) =
+  case phase of
+    submitted_phase ⇒
+      cancellation_changed
+        (request_record
+          request_key
+          attempt_key
+          cancellation_pending
+          payload
+          chunks)
+        (cancellation_requested request_key attempt_key)
+    streaming_phase ⇒
+      cancellation_changed
+        (request_record
+          request_key
+          attempt_key
+          cancellation_pending
+          payload
+          chunks)
+        (cancellation_requested request_key attempt_key)
+    cancellation_pending ⇒
+      cancellation_unchanged entry "cancellation already requested"
+    _ ⇒
+      cancellation_unchanged entry "cannot cancel a terminal request"
+
+cancel_in_requests : request_id → List request_entry → request_list_change
+cancel_in_requests wanted [] =
+  request_list_unchanged [] "cancellation names an unknown request"
+cancel_in_requests wanted (entry :: rest) =
+  if same_request wanted (entry_request entry)
+    then case cancel_entry entry of
+      cancellation_changed updated_entry canonical_event ⇒
+        request_list_changed (updated_entry :: rest) canonical_event
+      cancellation_unchanged unchanged_entry reason ⇒
+        request_list_unchanged (unchanged_entry :: rest) reason
+    else case cancel_in_requests wanted rest of
+      request_list_changed updated_rest canonical_event ⇒
+        request_list_changed (entry :: updated_rest) canonical_event
+      request_list_unchanged unchanged_rest reason ⇒
+        request_list_unchanged (entry :: unchanged_rest) reason
+
+public export
+request_cancellation : request_id → chat_core → chat_core
+request_cancellation wanted
+  core@(core_state
+    authority_id
+    log
+    requests
+    next_request
+    next_attempt
+    diagnostics) =
+      case cancel_in_requests wanted requests of
+        request_list_changed updated_requests canonical_event ⇒
+          core_state
+            authority_id
+            (append_event canonical_event log)
+            updated_requests
+            next_request
+            next_attempt
+            diagnostics
+        request_list_unchanged _ reason ⇒
+          add_diagnostic reason core
+
+retry_entry : attempt_id → request_entry → retry_change
+retry_entry new_attempt
+  entry@(request_record request_key _ phase payload chunks) =
+    case phase of
+      delivery_uncertain _ ⇒
+        retry_changed
+          (request_record
+            request_key
+            new_attempt
+            submitted_phase
+            payload
+            [])
+          (retry_submitted request_key new_attempt)
+      _ ⇒ retry_unchanged entry "retry requires an uncertain delivery state"
+
+retry_in_requests :
+  request_id →
+  attempt_id →
+  List request_entry →
+  request_list_change
+retry_in_requests wanted new_attempt [] =
+  request_list_unchanged [] "retry names an unknown request"
+retry_in_requests wanted new_attempt (entry :: rest) =
+  if same_request wanted (entry_request entry)
+    then case retry_entry new_attempt entry of
+      retry_changed updated_entry canonical_event ⇒
+        request_list_changed (updated_entry :: rest) canonical_event
+      retry_unchanged unchanged_entry reason ⇒
+        request_list_unchanged (unchanged_entry :: rest) reason
+    else case retry_in_requests wanted new_attempt rest of
+      request_list_changed updated_rest canonical_event ⇒
+        request_list_changed (entry :: updated_rest) canonical_event
+      request_list_unchanged unchanged_rest reason ⇒
+        request_list_unchanged (entry :: unchanged_rest) reason
+
+find_request : request_id → List request_entry → Maybe request_entry
+find_request wanted [] = Nothing
+find_request wanted (entry :: rest) =
+  if same_request wanted (entry_request entry)
+    then Just entry
+    else find_request wanted rest
+
+public export
+retry_request : request_id → chat_core → retry_result
+retry_request wanted
+  core@(core_state
+    authority_id
+    log@(event_log conversation_id _ _)
+    requests
+    next_request
+    next_attempt
+    diagnostics) =
+      let new_attempt = attempt next_attempt in
+      case retry_in_requests wanted new_attempt requests of
+        request_list_changed updated_requests canonical_event ⇒
+          case find_request wanted updated_requests of
+            Just updated_entry ⇒
+              let updated_core =
+                    core_state
+                      authority_id
+                      (append_event canonical_event log)
+                      updated_requests
+                      next_request
+                      (S next_attempt)
+                      diagnostics
+                  outbound =
+                    send_to
+                      authority_id
+                      conversation_id
+                      wanted
+                      new_attempt
+                      (entry_payload updated_entry)
+              in retry_started updated_core new_attempt outbound
+            Nothing ⇒
+              retry_rejected
+                (add_diagnostic
+                  "internal retry update lost its request"
+                  core)
+                "internal retry update lost its request"
+        request_list_unchanged _ reason ⇒
+          retry_rejected (add_diagnostic reason core) reason
+
+public export
+request_phase_for : request_id → chat_core → Maybe request_phase
+request_phase_for wanted (core_state _ _ requests _ _ _) =
+  case find_request wanted requests of
+    Just entry ⇒ Just (entry_phase entry)
+    Nothing ⇒ Nothing
+
+public export
+request_attempt_for : request_id → chat_core → Maybe attempt_id
+request_attempt_for wanted (core_state _ _ requests _ _ _) =
+  case find_request wanted requests of
+    Just entry ⇒ Just (entry_attempt entry)
+    Nothing ⇒ Nothing
+
+public export
+request_is_completed : request_id → chat_core → Bool
+request_is_completed wanted core =
+  case request_phase_for wanted core of
+    Just completed_phase ⇒ True
+    _ ⇒ False
+
+public export
+request_is_uncertain : request_id → chat_core → Bool
+request_is_uncertain wanted core =
+  case request_phase_for wanted core of
+    Just (delivery_uncertain _) ⇒ True
+    _ ⇒ False
+
+public export
+run_transport_events : List model_event → chat_core → chat_core
+run_transport_events [] core = core
+run_transport_events (event :: rest) core =
+  run_transport_events rest (handle_model_event event core)
+
+public export
+started_for : model_request → model_event
+started_for (send_to _ _ request_key attempt_key _) =
+  response_started request_key attempt_key
+
+public export
+chunk_for : model_request → Text → model_event
+chunk_for (send_to _ _ request_key attempt_key _) chunk =
+  response_chunk request_key attempt_key chunk
+
+public export
+tool_for : model_request → Text → model_event
+tool_for (send_to _ _ request_key attempt_key _) tool_payload =
+  response_tool request_key attempt_key tool_payload
+
+public export
+completed_for : model_request → model_event
+completed_for (send_to _ _ request_key attempt_key _) =
+  response_completed request_key attempt_key
+
+public export
+cancelled_for : model_request → model_event
+cancelled_for (send_to _ _ request_key attempt_key _) =
+  response_cancelled request_key attempt_key
+
+public export
+connection_lost_for : model_request → Text → model_event
+connection_lost_for (send_to _ _ request_key attempt_key _) message =
+  response_connection_lost request_key attempt_key message
+
+public export
+simulate_success : model_request → List model_event
+simulate_success outbound =
+  [ started_for outbound
+  , chunk_for outbound "simulated response"
+  , completed_for outbound
+  ]
+
+public export
+simulate_loss_after_chunk : model_request → List model_event
+simulate_loss_after_chunk outbound =
+  [ started_for outbound
+  , chunk_for outbound "partial response"
+  , connection_lost_for outbound "delivery state unknown"
+  ]
+
+public export
+open_view : view_id → conversation_id → view_state
+open_view view_key conversation_key =
+  observing view_key conversation_key (after_sequence 0)
+
+events_after_number : Number → List stored_event → List stored_event
+events_after_number cursor [] = []
+events_after_number cursor (entry :: rest) =
+  if stored_sequence entry > cursor
+    then entry :: events_after_number cursor rest
+    else events_after_number cursor rest
+
+last_sequence_from : Number → List stored_event → Number
+last_sequence_from previous [] = previous
+last_sequence_from previous (entry :: rest) =
+  last_sequence_from (stored_sequence entry) rest
+
+public export
+read_view : view_state → conversation_log → view_read
+read_view
+  state@(observing view_key wanted_conversation (after_sequence cursor))
+  log@(event_log actual_conversation _ events) =
+    if same_conversation wanted_conversation actual_conversation
+      then
+        let visible = events_after_number cursor events
+            updated_cursor =
+              after_sequence (last_sequence_from cursor visible)
+        in observed
+             (observing view_key wanted_conversation updated_cursor)
+             visible
+      else observed state []
+
+public export
+event_count : List stored_event → Number
+event_count = length
