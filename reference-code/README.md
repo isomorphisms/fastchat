@@ -15,6 +15,13 @@ This directory keeps upstream implementations visible while FastChat is being de
 5. If a reference becomes an executable compatibility target, prefer a pinned submodule or an explicit fixture over a floating copy.
 6. Large platform trees such as Chromium, AndroidX, AOSP, Shizuku, and Termux should remain links unless a very small source slice is deliberately captured.
 7. The dated raw sweep in [sweep-2026-10-06.md](sweep-2026-10-06.md) intentionally retains weak and redundant candidates so later work can revisit them.
+8. The original sweep is not globally exhaustive. Keep later discoveries in dated supplements rather than silently changing its receipt counts; see [supplement-2026-10-06.md](supplement-2026-10-06.md).
+9. Renderer implementation evidence is tracked separately in [renderers.md](renderers.md), including the Material 3 product lane and the native-surface comparison lane.
+
+## Read first: renderer choices
+
+- [Renderer reference map](renderers.md) — FastChat-specific Material 3 versus native-surface architecture, internal executable references, text-rendering boundary, and required measurements.
+- [Supplemental GitHub sweep](supplement-2026-10-06.md) — high-signal clients/session bridges missed by the original 302-repository sweep.
 
 ## Read first: native/mobile chat clients
 
@@ -33,10 +40,26 @@ This directory keeps upstream implementations visible while FastChat is being de
 - [AndraxDev/speak-gpt](https://github.com/AndraxDev/speak-gpt) — Android voice-assistant design and multimodal/provider surface.
 - [mindylab/lmsmob_chat](https://github.com/mindylab/lmsmob_chat) — native Android controller for a remote local-model server, including MCP/server tools and scheduled watch jobs.
 - [adebnar/hermes-android](https://github.com/adebnar/hermes-android) — native phone control surface for remote agents: sessions, models, scheduled jobs, usage, messaging and live agent activity.
+- [rikkahub/rikkahub](https://github.com/rikkahub/rikkahub) — major native Android LLM client: Kotlin/Compose/Material You, Room, branching, multimodal input, tools/MCP and search.
+- [jacob-ayang/rikkahub-armv7a](https://github.com/jacob-ayang/rikkahub-armv7a) — third-party ARMv7a build of RikkaHub; useful specifically as 32-bit Android evidence, not as an upstream authority.
+- [MukheshKumarV/aria-android](https://github.com/MukheshKumarV/aria-android) — deliberately small single-screen Kotlin/Compose/Material 3 OpenAI client with speech input/output.
+- [Vali-98/ChatterUI](https://github.com/Vali-98/ChatterUI) — mobile LLM frontend spanning remote APIs and on-device llama.cpp; useful for mobile lifecycle and local/native bridge behavior.
+- [a-ghorbani/pocketpal-ai](https://github.com/a-ghorbani/pocketpal-ai) — substantial mobile llama.cpp client with Android performance/hardware work.
+- [shubham0204/SmolChat-Android](https://github.com/shubham0204/SmolChat-Android) — compact Android GGUF/llama.cpp client.
 - [dzianisv/opencode-mobile](https://github.com/dzianisv/opencode-mobile) — Android controller for remote coding-agent sessions.
 - [allocsys/openhands-android-client](https://github.com/allocsys/openhands-android-client) — native Android controller for OpenHands using REST + WebSocket.
 
 Other Android/mobile implementations worth keeping visible include [wieslawsoltes/ChatGPT](https://github.com/wieslawsoltes/ChatGPT), [Taewan-P/gpt_mobile](https://github.com/Taewan-P/gpt_mobile), [mardillu/OpenAI-Client-Android](https://github.com/mardillu/OpenAI-Client-Android), [danil0vah/ChatGPTAndroidClient](https://github.com/danil0vah/ChatGPTAndroidClient), [NNCVA/ChatPPP](https://github.com/NNCVA/ChatPPP), [tapir/chattoneko](https://github.com/tapir/chattoneko), [CodeNeow/MyLlama](https://github.com/CodeNeow/MyLlama), [xing133/OriginChat](https://github.com/xing133/OriginChat), [Shashank02051997/AnywhereGPT-Android](https://github.com/Shashank02051997/AnywhereGPT-Android), [simplifylabs/WearAI](https://github.com/simplifylabs/WearAI), [hiylo/starburst](https://github.com/hiylo/starburst), [ykai55/TinyChat](https://github.com/ykai55/TinyChat), [ethanchzhong/eChat](https://github.com/ethanchzhong/eChat), [PacifAIst/API2CHAT](https://github.com/PacifAIst/API2CHAT), [oriveo/oriveo](https://github.com/oriveo/oriveo), and [Minis233/miniichat](https://github.com/Minis233/miniichat).
+
+## ChatGPT account/session/history adapters
+
+These references are separate from ordinary OpenAI-compatible API clients. They matter if FastChat or IB needs to discover, import, search, or continue existing ChatGPT-account threads. Private-web-protocol dependencies must stay isolated behind an adapter because they can change without notice.
+
+- [planetaryescape/chatgpt-cli](https://github.com/planetaryescape/chatgpt-cli) — indexes/searches/exports existing ChatGPT history from a logged-in browser session into SQLite.
+- [DrA1ex/chatgpt-bridge](https://github.com/DrA1ex/chatgpt-bridge) — browser-extension bridge exposing a logged-in ChatGPT tab over local HTTP/SSE/JSON-RPC.
+- [l0z4n0-a1/chatgpt-bridge](https://github.com/l0z4n0-a1/chatgpt-bridge) — compact localhost OpenAI-compatible bridge using ChatGPT OAuth/session tokens.
+- [defcron/mirror](https://github.com/defcron/mirror) — ChatGPT mirror plus OpenAI-compatible API over the private web protocol, including conversation operations and streaming.
+- [guyah/chatgptexporter](https://github.com/guyah/chatgptexporter) — browser extension for current/bulk ChatGPT conversation export with incremental/resumable bookkeeping.
 
 ## Web feature baselines
 
