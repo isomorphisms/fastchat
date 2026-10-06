@@ -100,6 +100,21 @@ choice retry_result one_of
   retry_started chat_core attempt_id model_request
   retry_rejected chat_core Text
 
+public export
+choice user_command one_of
+  send_text Text
+  cancel request_id
+  retry request_id
+
+public export
+choice transport_command one_of
+  start_model model_request
+  cancel_model_attempt request_id attempt_id
+
+public export
+choice core_output one_of
+  core_effects chat_core (List transport_command)
+
 choice admission one_of
   accepted conversation_event request_entry
   ignored Text request_entry
@@ -123,6 +138,10 @@ choice event_cursor one_of
 public export
 choice view_state one_of
   observing view_id conversation_id event_cursor
+
+public export
+choice log_read one_of
+  read_events event_cursor (List stored_event)
 
 public export
 choice view_read one_of
@@ -661,6 +680,48 @@ request_is_uncertain wanted core =
     _ ⇒ False
 
 public export
+apply_user_command : user_command → chat_core → core_output
+apply_user_command (send_text prompt) core =
+  case submit_request prompt core of
+    submitted_request updated_core _ _ outbound ⇒
+      core_effects updated_core [start_model outbound]
+apply_user_command (retry wanted) core =
+  case retry_request wanted core of
+    retry_started updated_core _ outbound ⇒
+      core_effects updated_core [start_model outbound]
+    retry_rejected updated_core _ ⇒
+      core_effects updated_core []
+apply_user_command (cancel wanted)
+  core@(core_state
+    authority_id
+    log
+    requests
+    next_request
+    next_attempt
+    diagnostics) =
+      case find_request wanted requests of
+        Nothing ⇒
+          core_effects
+            (add_diagnostic "cancellation names an unknown request" core)
+            []
+        Just entry ⇒
+          case cancel_in_requests wanted requests of
+            request_list_changed updated_requests canonical_event ⇒
+              let updated_core =
+                    core_state
+                      authority_id
+                      (append_event canonical_event log)
+                      updated_requests
+                      next_request
+                      next_attempt
+                      diagnostics
+              in core_effects
+                   updated_core
+                   [cancel_model_attempt wanted (entry_attempt entry)]
+            request_list_unchanged _ reason ⇒
+              core_effects (add_diagnostic reason core) []
+
+public export
 run_transport_events : List model_event → chat_core → chat_core
 run_transport_events [] core = core
 run_transport_events (event :: rest) core =
@@ -730,18 +791,24 @@ last_sequence_from previous (entry :: rest) =
   last_sequence_from (stored_sequence entry) rest
 
 public export
+read_log : event_cursor → conversation_log → log_read
+read_log (after_sequence cursor) (event_log _ _ events) =
+  let visible = events_after_number cursor events
+      updated_cursor =
+        after_sequence (last_sequence_from cursor visible)
+  in read_events updated_cursor visible
+
+public export
 read_view : view_state → conversation_log → view_read
 read_view
-  state@(observing view_key wanted_conversation (after_sequence cursor))
-  log@(event_log actual_conversation _ events) =
+  state@(observing view_key wanted_conversation cursor)
+  log@(event_log actual_conversation _ _) =
     if same_conversation wanted_conversation actual_conversation
-      then
-        let visible = events_after_number cursor events
-            updated_cursor =
-              after_sequence (last_sequence_from cursor visible)
-        in observed
-             (observing view_key wanted_conversation updated_cursor)
-             visible
+      then case read_log cursor log of
+        read_events updated_cursor visible ⇒
+          observed
+            (observing view_key wanted_conversation updated_cursor)
+            visible
       else observed state []
 
 public export
