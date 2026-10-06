@@ -161,8 +161,8 @@ same_attempt (attempt left) (attempt right) = left ≟ right
 
 public export
 empty_core : transport_authority → conversation_id → chat_core
-empty_core authority_id conversation_id =
-  core_state authority_id (event_log conversation_id 1 []) [] 1 1 []
+empty_core authority_id conversation_key =
+  core_state authority_id (event_log conversation_key 1 []) [] 1 1 []
 
 public export
 core_log : chat_core → conversation_log
@@ -170,8 +170,8 @@ core_log (core_state _ log _ _ _ _) = log
 
 public export
 core_conversation : chat_core → conversation_id
-core_conversation (core_state _ (event_log conversation_id _ _) _ _ _ _) =
-  conversation_id
+core_conversation (core_state _ (event_log conversation_key _ _) _ _ _ _) =
+  conversation_key
 
 public export
 core_authority : chat_core → transport_authority
@@ -194,9 +194,9 @@ stored_value : stored_event → conversation_event
 stored_value (stored _ event) = event
 
 append_event : conversation_event → conversation_log → conversation_log
-append_event event (event_log conversation_id next_sequence events) =
+append_event event (event_log conversation_key next_sequence events) =
   event_log
-    conversation_id
+    conversation_key
     (S next_sequence)
     (events ++ [stored next_sequence event])
 
@@ -227,7 +227,7 @@ submit_request : Text → chat_core → submission_result
 submit_request prompt
   (core_state
     authority_id
-    log@(event_log conversation_id _ _)
+    log@(event_log conversation_key _ _)
     requests
     next_request
     next_attempt
@@ -259,7 +259,7 @@ submit_request prompt
           outbound =
             send_to
               authority_id
-              conversation_id
+              conversation_key
               request_key
               attempt_key
               payload
@@ -609,7 +609,7 @@ retry_request : request_id → chat_core → retry_result
 retry_request wanted
   core@(core_state
     authority_id
-    log@(event_log conversation_id _ _)
+    log@(event_log conversation_key _ _)
     requests
     next_request
     next_attempt
@@ -630,7 +630,7 @@ retry_request wanted
                   outbound =
                     send_to
                       authority_id
-                      conversation_id
+                      conversation_key
                       wanted
                       new_attempt
                       (entry_payload updated_entry)
