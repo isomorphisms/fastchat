@@ -14,6 +14,9 @@ changing conversation semantics.
   identity are distinct types;
 - a request can outlive every visible view;
 - views observe a durable event log through independent cursors;
+- non-visual consumers can read the same log directly through an `event_cursor`;
+- user commands produce typed transport commands; neither the renderer nor the
+  conversation core owns sockets or a connection pool;
 - the conversation core admits canonical lifecycle events;
 - the store log supplies monotone durable sequence numbers;
 - stale-attempt and duplicate/late transport observations are rejected from
