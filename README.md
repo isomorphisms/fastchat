@@ -4,6 +4,16 @@
 
 The use case is simple: put a fast, low-overhead interface on a very cheap Android phone and use it to talk to agents. The phone does not need to be a general-purpose AI workstation. It needs to let a human read a thread, type or dictate, send work to an agent, and get the result back without the interface overwhelming the hardware.
 
+## Design status: deliberately open
+
+The feature set and Android process model are **not frozen**.
+
+A couple of ChatGPT clones are not enough evidence for either one, and source review cannot replace physical observation. In particular, the Shizuku/runtime inventory of the current ChatGPT app on the target phones is not complete yet, so FastChat must not assume that the processes, services, WebView/renderer behavior, media paths, background work, or lifecycle boundaries already identified are the whole set.
+
+Implementation preferences — including small native code, C built through ICK where appropriate, D experiments, and Idriç type sketches — do not substitute for requirements discovery.
+
+See [reference-code/](reference-code/) for the curated reference map and [the dated broad GitHub sweep](reference-code/sweep-2026-10-06.md). The sweep is intentionally wider than the code FastChat is likely to use.
+
 The reference target is the **MIRO A1**, an Android 14 Go phone in roughly the $60 class.
 
 [Buy the MIRO A1 on Amazon — affiliate link](https://www.amazon.com/dp/B0FJX2FTZF?tag=macguyver03-20)
