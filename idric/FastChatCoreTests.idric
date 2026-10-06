@@ -108,7 +108,7 @@ uncertain_delivery_requires_explicit_retry_test =
                        with_stale_observation
                in not (same_attempt old_attempt new_attempt) &&
                   request_is_completed request_key finished &&
-                  request_attempt_for request_key finished ≟ Just new_attempt &&
+                  request_attempt_is request_key new_attempt finished &&
                   log_size finished ≟ 8 &&
                   diagnostic_count finished ≟ 1
 
