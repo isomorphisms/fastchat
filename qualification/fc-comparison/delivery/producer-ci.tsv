@@ -1,0 +1,3 @@
+branch	source_revision	apk_producer_status	run_url	artifact_id	artifact_zip_sha256
+FC-D1	abecbc205cce5f76540b294ae505de42dcc75676	PASS	https://github.com/isomorphisms/fastchat/actions/runs/37586225636	11467275074	1696565099205871582a108a9c6bfeb2f11cd517931109c6788fa6513822f6b1
+FC-S1	89aba43a753ce492e44a3fc671a23e936f99ff2e	PASS	https://github.com/isomorphisms/fastchat/actions/runs/37586230118	11467205179	a759a2559740c1cc6158580defa44a0eeab35ef787c9fccc31e560518346b5a0
