@@ -1,0 +1,24 @@
+#!/usr/bin/env grease
+# Host-only, pinned source preparation. Never run on MIRO A1.
+var root = $1
+var sources = $2
+var protocol = $3
+test "$protocol" = 2
+mkdir -p "$sources"
+proc pin(name, repository, revision) {
+  if ! test -d "$sources/$name/.git" {
+    git clone --no-checkout --filter=blob:none "https://github.com/$repository.git" "$sources/$name"
+  }
+  git -C "$sources/$name" fetch origin "$revision"
+  git -C "$sources/$name" checkout --detach "$revision"
+  test $(git -C "$sources/$name" rev-parse HEAD) = "$revision"
+}
+pin curl curl/curl a05f34973e6c4bb629d018f7cb51487be1c904d8
+pin openssl openssl/openssl 67b5686b4419b4cb8caa502711c41815f5279751
+pin nghttp2 nghttp2/nghttp2 49908f992027821912b96a13898b665a35aa3a0a
+if git -C "$sources/curl" diff --quiet {
+  git -C "$sources/curl" apply "$root/_/transport/curl-small-windows.patch"
+}
+git -C "$sources/curl" diff > "$sources/curl-policy.patch"
+cmp "$sources/curl-policy.patch" "$root/_/transport/curl-small-windows.patch"
+echo 'PASS pinned sources and complete curl policy patch'

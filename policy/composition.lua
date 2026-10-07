@@ -4,9 +4,9 @@ local follows_stored_prefixes ← true
 local barrier_interval_ns ← 200000000
 local short_frames ← {
   "data: [START]\n\n",
-  "data: {\"text\":\"A local response, stored before presentation.\\n\\n\"}\n\n",
-  "data: {\"text\":\"UTF-8: \\u20ac \\ud83d\\ude42. Markdown is plain readable text:\\n\"}\n\n",
-  "data: {\"text\":\"**disk authority**\\n```text\\nbounded windows\\n```\\n\"}\n\n",
+  "data: {\"type\":\"response.output_text.delta\",\"delta\":\"A local response, stored before presentation.\\n\\n\"}\n\n",
+  "data: {\"type\":\"response.output_text.delta\",\"delta\":\"UTF-8: \\u20ac \\ud83d\\ude42. Markdown is plain readable text:\\n\"}\n\n",
+  "data: {\"type\":\"response.output_text.delta\",\"delta\":\"**disk authority**\\n```text\\nbounded windows\\n```\\n\"}\n\n",
   "data: [DONE]\n\n"
 }
 local composer_action ← ƒ(phase, running)

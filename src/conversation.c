@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "conversation.h"
+#include "admission.generated.h"
 #include "appendfat_arena.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -47,8 +48,37 @@ static Result storage_failure(Conversation *conversation) {
     conversation->poisoned ← 1;
     return FC_STORAGE_ERROR;
 }
+static int accept_utf8(Conversation *state, const unsigned char *bytes, size_t length) {
+    for (size_t index ← 0; index < length; index ← index + 1) {
+        unsigned byte ← bytes[index];
+        if (state->utf8_needed) {
+            if ((byte & 0xc0) != 0x80) return 0;
+            state->utf8_code ← (state->utf8_code << 6) | (byte & 63);
+            state->utf8_needed ← state->utf8_needed - 1;
+            if (!state->utf8_needed && (state->utf8_code < state->utf8_min || state->utf8_code > 0x10ffff
+                || (state->utf8_code >= 0xd800 && state->utf8_code <= 0xdfff))) return 0;
+        } else if (byte >= 0x80) {
+            if (byte >= 0xc2 && byte <= 0xdf) {
+                state->utf8_needed ← 1; state->utf8_min ← 0x80; state->utf8_code ← byte & 31;
+            } else if (byte >= 0xe0 && byte <= 0xef) {
+                state->utf8_needed ← 2; state->utf8_min ← 0x800; state->utf8_code ← byte & 15;
+            } else if (byte >= 0xf0 && byte <= 0xf4) {
+                state->utf8_needed ← 3; state->utf8_min ← 0x10000; state->utf8_code ← byte & 7;
+            } else return 0;
+        }
+    }
+    return 1;
+}
+static void fault_stage(Conversation *conversation, int stage) {
+#ifdef FC_FAULT_TESTING
+    if (conversation->crash_at == stage) _exit(73);
+#else
+    (void)conversation; (void)stage;
+#endif
+}
 static Result durability_barrier(Conversation *conversation, int file) {
-    if (conversation->fail_barrier) return storage_failure(conversation);
+    if (conversation->fail_barrier || conversation->fail_barrier_after == 0) return storage_failure(conversation);
+    if (conversation->fail_barrier_after > 0) conversation->fail_barrier_after ← conversation->fail_barrier_after - 1;
     int result;
     do { result ← fsync(file); } while (result < 0 && errno == EINTR);
     if (result < 0) return storage_failure(conversation);
@@ -85,7 +115,11 @@ static WriteResult write_at(Conversation *conversation, int file, const void *by
         conversation->measurements.write_count ← conversation->measurements.write_count + 1;
         if ((size_t)count > conversation->measurements.maximum_write)
             conversation->measurements.maximum_write ← (size_t)count;
-        if (journal) conversation->measurements.journal_bytes ← conversation->measurements.journal_bytes + count;
+        if (journal == 2) {
+            conversation->measurements.reserve_bytes ← conversation->measurements.reserve_bytes + count;
+            conversation->measurements.reserve_writes ← conversation->measurements.reserve_writes + 1;
+        }
+        else if (journal) conversation->measurements.journal_bytes ← conversation->measurements.journal_bytes + count;
         else conversation->measurements.data_bytes ← conversation->measurements.data_bytes + count;
     }
     return result;
@@ -117,18 +151,18 @@ static int event_is_admissible(const Conversation *conversation, Event event) {
     Phase phase ← conversation->phase;
     if (event == SUBMIT) return phase == IDLE || terminal_phase(phase);
     if (event == RETRY) return phase == UNCERTAIN;
-    if (event == START) return phase == SUBMITTED || phase == CANCEL_PENDING;
-    if (event == CANCEL_REQUEST) return phase == SUBMITTED || phase == GENERATING;
-    if (event == TRANSPORT_LOSS || event == FAILURE) return phase == SUBMITTED || phase == CANCEL_PENDING || phase == GENERATING;
-    if (event == CANCEL_ACK) return phase == GENERATING || phase == CANCEL_PENDING;
-    if (event == PREFIX || event == COMPLETE) return response_phase(conversation);
-    return 0;
+    if (event == ATTEMPT_SUBMIT) return conversation->pending_submission;
+    if (conversation->pending_submission && event != TRANSPORT_LOSS) return 0;
+    return phase <= FAILED && event > 0 && event <= TOOL
+        && (canonical_admission_masks[phase] & (1u << event)) != 0;
 }
 static void apply_phase(Conversation *conversation, Event event) {
-    if (event == SUBMIT || event == RETRY) {
+    if (event == SUBMIT || event == RETRY) conversation->pending_submission ← 1;
+    if (event == SUBMIT || event == ATTEMPT_SUBMIT) {
         conversation->phase ← SUBMITTED;
         conversation->response_started ← 0;
     }
+    if (event == ATTEMPT_SUBMIT || event == TRANSPORT_LOSS) conversation->pending_submission ← 0;
     if (event == START) {
         conversation->response_started ← 1;
         if (conversation->phase != CANCEL_PENDING) conversation->phase ← GENERATING;
@@ -139,8 +173,21 @@ static void apply_phase(Conversation *conversation, Event event) {
     if (event == FAILURE) conversation->phase ← FAILED;
     if (event == TRANSPORT_LOSS) conversation->phase ← UNCERTAIN;
 }
+static void begin_pending_extent(Conversation *conversation, Event event) {
+    if (event != SUBMIT && event != RETRY) return;
+    /* A durable user decision is not a transport observation of the previous
+       response. A crash before attempt submission must replay an empty turn. */
+    conversation->response_base ← conversation->arena_high_water;
+    conversation->extents ← (Extents){0};
+    conversation->extents.capacity ← conversation->arena_capacity - conversation->response_base;
+    conversation->response_crc ← 0xffffffffu;
+    conversation->utf8_needed ← 0;
+}
 static Result publish_record(Conversation *conversation, Event event, uint64_t request,
                              uint64_t attempt, const char *prompt, size_t prompt_length) {
+    if (conversation->sequence == UINT64_MAX || prompt_length > FC_PROMPT_BYTES
+        || conversation->journal_end > (uint64_t)INT64_MAX - RECORD_HEADER - prompt_length)
+        return storage_failure(conversation);
     unsigned char record[RECORD_BYTES];
     memset(record, 0, RECORD_HEADER);
     size_t length ← RECORD_HEADER + prompt_length;
@@ -162,7 +209,9 @@ static Result publish_record(Conversation *conversation, Event event, uint64_t r
     WriteResult written ← write_at(conversation, conversation->journal, record, length, conversation->journal_end, 1);
     /* A journal fragment is never resumable by a different event. */
     if (written.result != FC_OK) return storage_failure(conversation);
+    fault_stage(conversation, 3);
     if (durability_barrier(conversation, conversation->journal) != FC_OK) return FC_STORAGE_ERROR;
+    fault_stage(conversation, 4);
     conversation->journal_end ← conversation->journal_end + length;
     conversation->sequence ← conversation->sequence + 1;
     conversation->request ← request;
@@ -170,6 +219,7 @@ static Result publish_record(Conversation *conversation, Event event, uint64_t r
     conversation->extents.committed ← conversation->extents.durable;
     conversation->extents.eligible ← conversation->extents.committed;
     apply_phase(conversation, event);
+    begin_pending_extent(conversation, event);
     if (event == SUBMIT) {
         memcpy(conversation->prompt, prompt, prompt_length);
         conversation->prompt[prompt_length] ← 0;
@@ -194,6 +244,7 @@ static Result validate_prefix(Conversation *conversation,
         if (!read_exact(conversation->response, bytes, amount, position))
             return FC_CORRUPT;
         checksum ← checksum_bytes(checksum, bytes, amount);
+        if (!accept_utf8(conversation, bytes, amount)) return FC_CORRUPT;
         position ← position + amount;
     }
     if (checksum != expected) return FC_CORRUPT;
@@ -220,28 +271,39 @@ static Result replay_record(Conversation *conversation, const unsigned char *rec
     if (decode_number(record + 8, 8) != conversation->sequence + 1
         || decode_number(record + 52, 8) != conversation->conversation
         || length != RECORD_HEADER + prompt_length || !event_is_admissible(conversation, event)) return FC_CORRUPT;
-    if (event == SUBMIT || event == RETRY) {
+    if (event == ATTEMPT_SUBMIT) {
         if (attempt != conversation->attempt + 1
             || checksum != 0xffffffffu
             || extent != conversation->arena_high_water
-            || request != conversation->request + (event == SUBMIT)
-            || (event == RETRY && prompt_length)) return FC_CORRUPT;
+            || request != conversation->request || prompt_length) return FC_CORRUPT;
         conversation->response_base ← extent;
         conversation->extents ← (Extents){0};
         conversation->extents.capacity ←
             conversation->arena_capacity - conversation->response_base;
         conversation->response_crc ← 0xffffffffu;
-        if (event == SUBMIT) {
-            memcpy(conversation->prompt, record + RECORD_HEADER, prompt_length);
-            conversation->prompt[prompt_length] ← 0;
-            conversation->prompt_length ← prompt_length;
-        }
-    } else if (request != conversation->request || attempt != conversation->attempt || prompt_length) return FC_CORRUPT;
+        conversation->utf8_needed ← 0;
+    } else if (request != conversation->request + (event == SUBMIT) || attempt != conversation->attempt
+               || (prompt_length && event != SUBMIT && event != TOOL)) return FC_CORRUPT;
+    if (event == SUBMIT) {
+        int valid;
+        if (!prompt_length || complete_utf8_prefix(record + RECORD_HEADER, prompt_length, &valid) != prompt_length || !valid)
+            return FC_CORRUPT;
+        memcpy(conversation->prompt, record + RECORD_HEADER, prompt_length);
+        conversation->prompt[prompt_length] ← 0;
+        conversation->prompt_length ← prompt_length;
+    }
+    if (event == TOOL) {
+        int valid;
+        if (!prompt_length || complete_utf8_prefix(record + RECORD_HEADER, prompt_length, &valid) != prompt_length || !valid)
+            return FC_CORRUPT;
+    }
     if (validate_prefix(conversation, extent, checksum) != FC_OK) return FC_CORRUPT;
+    if (event == COMPLETE && conversation->utf8_needed) return FC_CORRUPT;
     conversation->request ← request;
     conversation->attempt ← attempt;
     conversation->sequence ← conversation->sequence + 1;
     apply_phase(conversation, event);
+    begin_pending_extent(conversation, event);
     return FC_OK;
 }
 static Result replay_journal(Conversation *conversation) {
@@ -275,6 +337,7 @@ static Result replay_journal(Conversation *conversation) {
             conversation->arena_capacity - conversation->response_base;
         if (!extents_are_ordered(conversation)) return FC_CORRUPT;
     }
+    if (conversation->phase == UNCERTAIN) conversation->pending_submission ← 0;
     if (conversation->phase == SUBMITTED || conversation->phase == GENERATING || conversation->phase == CANCEL_PENDING) {
         conversation->recovered_partial ← 1;
         if (publish_record(conversation, TRANSPORT_LOSS, conversation->request, conversation->attempt, NULL, 0) != FC_OK)
@@ -290,6 +353,7 @@ Result conversation_open(Conversation *conversation, const char *directory) {
     conversation->conversation ← 1;
     conversation->response_crc ← 0xffffffffu;
     conversation->write_budget ← -1;
+    conversation->fail_barrier_after ← -1;
     int created ← mkdir(directory, 0700);
     if (created < 0 && errno != EEXIST) return FC_STORAGE_ERROR;
     if (created == 0) {
@@ -341,12 +405,18 @@ void conversation_close(Conversation *conversation) {
 static Result begin_request(Conversation *conversation, Event event, const char *text, size_t length) {
     if (conversation->poisoned) return FC_STORAGE_ERROR;
     if (!event_is_admissible(conversation, event)) return FC_REJECTED;
+    if (conversation->request == UINT64_MAX || conversation->attempt == UINT64_MAX || conversation->sequence > UINT64_MAX - 2)
+        return FC_REJECTED;
+    /* The user decision is durable before a fresh transport identity exists. */
+    if (publish_record(conversation, event, conversation->request + (event == SUBMIT),
+                       conversation->attempt, text, length) != FC_OK) return FC_STORAGE_ERROR;
     conversation->extents ← (Extents){0};
     if (prepare_attempt(conversation, conversation->attempt + 1) != FC_OK)
         return FC_STORAGE_ERROR;
     conversation->response_crc ← 0xffffffffu;
-    return publish_record(conversation, event, conversation->request + (event == SUBMIT),
-                          conversation->attempt + 1, text, length);
+    conversation->utf8_needed ← 0;
+    return publish_record(conversation, ATTEMPT_SUBMIT, conversation->request,
+                          conversation->attempt + 1, NULL, 0);
 }
 Result submit_text(Conversation *conversation, const char *text, size_t length) {
     if (!length || length > FC_PROMPT_BYTES) return FC_REJECTED;
@@ -362,8 +432,27 @@ Result commit_stored_prefix(Conversation *conversation) {
     if (!response_phase(conversation)) return FC_REJECTED;
     if (conversation->extents.written == conversation->extents.committed) return FC_OK;
     if (durability_barrier(conversation, conversation->response) != FC_OK) return FC_STORAGE_ERROR;
+    fault_stage(conversation, 2);
     conversation->extents.durable ← conversation->extents.written;
     return publish_record(conversation, PREFIX, conversation->request, conversation->attempt, NULL, 0);
+}
+static Result reserve_response_tail(Conversation *conversation, uint64_t required) {
+    if (required > (uint64_t)INT64_MAX - (RESERVATION_BYTES - 1)) return FC_REJECTED;
+    uint64_t target ← ((required + RESERVATION_BYTES - 1) / RESERVATION_BYTES) * RESERVATION_BYTES;
+    unsigned char zeroes[FC_WRITE_BYTES] ← {0};
+    conversation->measurements.reserve_calls ← conversation->measurements.reserve_calls + 1;
+    /* The reference allocator used 256 KiB temporary RAM and unmetered writes.
+       Keep the arena layout, but route reservation through the bounded writer. */
+    while (conversation->arena_capacity < target) {
+        size_t amount ← target - conversation->arena_capacity > sizeof(zeroes)
+            ? sizeof(zeroes) : (size_t)(target - conversation->arena_capacity);
+        WriteResult written ← write_at(conversation, conversation->response, zeroes, amount,
+                                        conversation->arena_capacity, 2);
+        conversation->arena_capacity ← conversation->arena_capacity + written.consumed;
+        if (written.result != FC_OK) return written.result;
+    }
+    conversation->extents.capacity ← conversation->arena_capacity - conversation->response_base;
+    return FC_OK;
 }
 WriteResult store_response_bytes(Conversation *conversation, uint64_t request, uint64_t attempt,
                                  const void *bytes, size_t length) {
@@ -371,6 +460,11 @@ WriteResult store_response_bytes(Conversation *conversation, uint64_t request, u
     if (conversation->poisoned) { rejected.result ← FC_STORAGE_ERROR; return rejected; }
     if (request != conversation->request || attempt != conversation->attempt || !response_phase(conversation))
         return rejected;
+    Conversation checked ← *conversation;
+    if ((!bytes && length) || !accept_utf8(&checked, bytes, length)) {
+        rejected.result ← FC_INVALID_TEXT;
+        return rejected;
+    }
     if ((uint64_t)length > (uint64_t)INT64_MAX - conversation->extents.written)
         return rejected;
     uint64_t required ← conversation->extents.written + length;
@@ -387,32 +481,22 @@ WriteResult store_response_bytes(Conversation *conversation, uint64_t request, u
         uint64_t end ← conversation->extents.written + amount;
         uint64_t absolute_end ← conversation->response_base + end;
         if (end > conversation->extents.capacity) {
-            uint64_t old_capacity ← conversation->arena_capacity;
-            uint64_t capacity ← old_capacity;
-            if (appendfat_arena_reserve_fd(conversation->response,
-                    old_capacity, absolute_end, RESERVATION_BYTES, &capacity) != 0) {
-                total.result ← storage_failure(conversation);
-                return total;
-            }
-            conversation->arena_capacity ← capacity;
-            conversation->extents.capacity ←
-                capacity - conversation->response_base;
-            conversation->measurements.reserve_bytes ←
-                conversation->measurements.reserve_bytes + capacity - old_capacity;
-            conversation->measurements.reserve_calls ←
-                conversation->measurements.reserve_calls + 1;
+            total.result ← reserve_response_tail(conversation, absolute_end);
+            if (total.result != FC_OK) return total;
         }
         AppendAddress address ← response_append_address(conversation);
         WriteResult written ← write_at(conversation, conversation->response,
                                         source + total.consumed, amount,
                                         conversation->response_base + address.offset, 0);
         conversation->response_crc ← checksum_bytes(conversation->response_crc, source + total.consumed, written.consumed);
+        accept_utf8(conversation, source + total.consumed, written.consumed);
         conversation->extents.written ← conversation->extents.written + written.consumed;
         uint64_t high_water ← conversation->response_base + conversation->extents.written;
         if (high_water > conversation->arena_high_water)
             conversation->arena_high_water ← high_water;
         total.consumed ← total.consumed + written.consumed;
         if (written.result != FC_OK) { total.result ← written.result; return total; }
+        fault_stage(conversation, 1);
         if (conversation->extents.written - conversation->extents.committed >= FC_BATCH_BYTES) {
             total.result ← commit_stored_prefix(conversation);
             if (total.result != FC_OK) return total;
@@ -423,9 +507,10 @@ WriteResult store_response_bytes(Conversation *conversation, uint64_t request, u
 Result admit_event(Conversation *conversation, uint64_t request, uint64_t attempt, Event event) {
     if (conversation->poisoned) return FC_STORAGE_ERROR;
     if (request != conversation->request || attempt != conversation->attempt
-        || !event_is_admissible(conversation, event) || event == SUBMIT || event == RETRY || event == PREFIX)
+        || !event_is_admissible(conversation, event) || event == SUBMIT || event == RETRY || event == PREFIX
+        || event == ATTEMPT_SUBMIT || event == TOOL)
         return FC_REJECTED;
-    if (event == COMPLETE && conversation->extents.received != conversation->extents.written)
+    if (event == COMPLETE && (conversation->extents.received != conversation->extents.written || conversation->utf8_needed))
         return FC_REJECTED;
     /* All metadata records reference a durable checksum, including cancel requests. */
     if (response_phase(conversation) && commit_stored_prefix(conversation) != FC_OK) return FC_STORAGE_ERROR;
@@ -435,6 +520,77 @@ Result admit_event(Conversation *conversation, uint64_t request, uint64_t attemp
      * is the capacity the next attempt reuses.
      */
     return publish_record(conversation, event, request, attempt, NULL, 0);
+}
+Result store_tool_event(Conversation *conversation, uint64_t request, uint64_t attempt,
+                        const char *bytes, size_t length) {
+    if (conversation->poisoned) return FC_STORAGE_ERROR;
+    int valid;
+    if (!bytes || complete_utf8_prefix((const unsigned char *)bytes, length, &valid) != length || !valid)
+        return FC_INVALID_TEXT;
+    if (request != conversation->request || attempt != conversation->attempt
+        || !event_is_admissible(conversation, TOOL) || !length || length > FC_PROMPT_BYTES)
+        return FC_REJECTED;
+    if (commit_stored_prefix(conversation) != FC_OK) return FC_STORAGE_ERROR;
+    return publish_record(conversation, TOOL, request, attempt, bytes, length);
+}
+const char *event_name(Event event) {
+    static const char *names[] ← { "invalid", "user_submitted", "model_started", "model_chunk",
+        "model_completed", "cancellation_requested", "model_cancelled", "model_failed",
+        "model_uncertain", "retry_requested", "transport_attempt_submitted", "model_tool" };
+    return event > 0 && event <= TOOL ? names[event] : names[0];
+}
+Result history_turn(Conversation *conversation, uint64_t wanted, HistoryTurn *turn) {
+    if (!wanted || wanted > conversation->request || conversation->poisoned) return FC_REJECTED;
+    memset(turn, 0, sizeof(*turn));
+    unsigned char record[RECORD_BYTES];
+    uint64_t position ← 0;
+    while (position < conversation->journal_end) {
+        if (!read_exact(conversation->journal, record, RECORD_HEADER, position)) return FC_CORRUPT;
+        size_t length ← (size_t)decode_number(record + 4, 4);
+        if (length < RECORD_HEADER || length > sizeof(record) || length > conversation->journal_end - position
+            || !read_exact(conversation->journal, record, length, position)) return FC_CORRUPT;
+        uint32_t crc ← (uint32_t)decode_number(record + 60, 4);
+        memset(record + 60, 0, 4);
+        if (memcmp(record, "FC02", 4) || checksum_bytes(0xffffffffu, record, length) != crc) return FC_CORRUPT;
+        if (decode_number(record + 16, 8) == wanted) {
+            Event event ← (Event)decode_number(record + 44, 4);
+            uint64_t absolute ← decode_number(record + 32, 8);
+            if (event == SUBMIT) {
+                turn->request ← wanted;
+                turn->prompt_length ← length - RECORD_HEADER;
+                memcpy(turn->prompt, record + RECORD_HEADER, turn->prompt_length);
+                turn->prompt[turn->prompt_length] ← 0;
+                turn->phase ← SUBMITTED;
+            }
+            if (event == SUBMIT || event == RETRY) { turn->base ← absolute; turn->extent ← 0; }
+            if (event == ATTEMPT_SUBMIT) { turn->base ← absolute; turn->extent ← 0; turn->phase ← SUBMITTED; }
+            else if (event != SUBMIT && event != RETRY) {
+                if (absolute < turn->base || absolute > conversation->arena_capacity) return FC_CORRUPT;
+                turn->extent ← absolute - turn->base;
+                if (event == START) turn->phase ← GENERATING;
+                if (event == CANCEL_REQUEST) turn->phase ← CANCEL_PENDING;
+                if (event == COMPLETE) turn->phase ← COMPLETED;
+                if (event == CANCEL_ACK) turn->phase ← CANCELLED;
+                if (event == FAILURE) turn->phase ← FAILED;
+                if (event == TRANSPORT_LOSS) turn->phase ← UNCERTAIN;
+            }
+            turn->attempt ← decode_number(record + 24, 8);
+        }
+        position ← position + length;
+    }
+    return turn->request == wanted ? FC_OK : FC_CORRUPT;
+}
+Result read_history_window(Conversation *conversation, const HistoryTurn *turn, uint64_t offset,
+                           unsigned char *bytes, size_t capacity, size_t *length) {
+    *length ← 0;
+    if (capacity > FC_VIEW_BYTES) capacity ← FC_VIEW_BYTES;
+    if (offset >= turn->extent || !capacity) return FC_OK;
+    size_t amount ← turn->extent - offset > capacity ? capacity : (size_t)(turn->extent - offset);
+    if (turn->base > conversation->arena_capacity || turn->extent > conversation->arena_capacity - turn->base
+        || !read_exact(conversation->response, bytes, amount, turn->base + offset)) return FC_CORRUPT;
+    int valid;
+    *length ← complete_utf8_prefix(bytes, amount, &valid);
+    return valid ? FC_OK : FC_INVALID_TEXT;
 }
 size_t complete_utf8_prefix(const unsigned char *bytes, size_t length, int *valid) {
     size_t position ← 0;

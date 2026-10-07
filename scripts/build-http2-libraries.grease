@@ -1,0 +1,84 @@
+#!/usr/bin/env grease
+# Off-device foreign dependency stage, retained from the qualified H2 experiment.
+set -eu -o pipefail
+if (len(ARGV) !== 7) {
+  echo 'usage: build-http2-libraries.grease SOURCES OUTPUT NDK host|a1 CMAKE ICK_DRIVER ICK_LIBEXEC'
+  exit 2
+}
+var sources = ARGV[0]
+var output = ARGV[1]
+var ndk = ARGV[2]
+var platform = ARGV[3]
+var cmake = ARGV[4]
+var ick = ARGV[5]
+var support = ARGV[6]
+var directory = $(dirname "$0")
+var repository = $(realpath "$directory/..")
+var ndk_bin = "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin"
+var compiler = ick
+var compile_flags = "-B$support/ -B/usr/lib/gcc/x86_64-linux-gnu/13/ -isystem /usr/lib/gcc/x86_64-linux-gnu/13/include"
+var openssl_target = 'linux-x86_64'
+var cmake_target = []
+var configure_target = []
+test "$platform" = host || test "$platform" = a1
+if (platform === 'a1') {
+  var sysroot = "$ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+  setvar compile_flags = "-B$support/ --sysroot=$sysroot -isystem $sysroot/usr/include -isystem $sysroot/usr/include/arm-linux-androideabi -D__ANDROID__ -D__ANDROID_API__=26 -DBIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD -marm -march=armv7-a -mfloat-abi=softfp -mfpu=vfpv3-d16"
+  setvar openssl_target = 'linux-armv4'
+  # Feature probes compile through ICK and link through the platform driver.
+  # curl deliberately changes its probes back to EXECUTABLE; it cannot use
+  # the bare ARM GNU driver for Android CRT/runtime linking.
+  mkdir -p "$output"
+  cat > "$output/ick-platform.cmake" <<EOF
+set(CMAKE_SYSTEM_NAME Linux)
+set(CMAKE_SYSTEM_PROCESSOR arm)
+set(CMAKE_SYSROOT "$sysroot")
+set(CMAKE_C_COMPILER "$compiler")
+set(CMAKE_C_FLAGS_INIT "$compile_flags")
+set(CMAKE_C_LINK_EXECUTABLE "$ndk_bin/armv7a-linux-androideabi26-clang <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>" CACHE STRING "ICK object / Android platform probe link" FORCE)
+EOF
+  setvar cmake_target = ["-DCMAKE_TOOLCHAIN_FILE=$output/ick-platform.cmake", '-DCMAKE_HAVE_LIBC_PTHREAD=1']
+}
+test -x "$compiler"
+test -x "$cmake"
+test $(git -C "$sources/curl" rev-parse HEAD) = a05f34973e6c4bb629d018f7cb51487be1c904d8
+test $(git -C "$sources/openssl" rev-parse HEAD) = 67b5686b4419b4cb8caa502711c41815f5279751
+test $(git -C "$sources/nghttp2" rev-parse HEAD) = 49908f992027821912b96a13898b665a35aa3a0a
+git -C "$sources/openssl" diff --exit-code
+git -C "$sources/nghttp2" diff --exit-code
+mkdir -p "$output/prefix" "$output/openssl"
+git -C "$sources/curl" diff > "$output/curl.patch"
+cmp "$output/curl.patch" "$repository/_/transport/curl-small-windows.patch"
+var prefix = "$output/prefix"
+setglobal ENV.ANDROID_NDK_ROOT = ndk
+setglobal ENV.PATH = ndk_bin ++ ':' ++ ENV.PATH
+cd "$output/openssl"
+env CC="$compiler" CFLAGS="$compile_flags -fPIC -ffunction-sections -fdata-sections" AR="$ndk_bin/llvm-ar" RANLIB="$ndk_bin/llvm-ranlib" "$sources/openssl/Configure" "$openssl_target" @configure_target no-asm no-shared no-tests no-apps no-module no-legacy --prefix="$prefix" --libdir=lib > "$output/openssl-configure.log"
+make -j4 build_libs > "$output/openssl-build.log" 2>&1
+make install_dev > "$output/openssl-install.log" 2>&1
+proc library(name, ...options) {
+  "$cmake" --fresh -S "$sources/$name" -B "$output/$name" @cmake_target \
+    -DCMAKE_C_COMPILER="$compiler" -DCMAKE_BUILD_TYPE=MinSizeRel \
+    -DCMAKE_C_STANDARD=11 -DCMAKE_C_STANDARD_REQUIRED=ON \
+    "-DCMAKE_C_FLAGS=$compile_flags -ffunction-sections -fdata-sections" "-DCMAKE_AR=$ndk_bin/llvm-ar" "-DCMAKE_RANLIB=$ndk_bin/llvm-ranlib" \
+    -DCMAKE_INSTALL_PREFIX="$prefix" -DCMAKE_PREFIX_PATH="$prefix" \
+    -DCMAKE_FIND_ROOT_PATH="$prefix" -DCMAKE_INSTALL_LIBDIR=lib \
+    -DOPENSSL_CRYPTO_LIBRARY="$prefix/lib/libcrypto.a" -DOPENSSL_SSL_LIBRARY="$prefix/lib/libssl.a" \
+    -DOPENSSL_INCLUDE_DIR="$prefix/include" -DNGHTTP2_INCLUDE_DIR="$prefix/include" \
+    -DNGHTTP2_LIBRARY="$prefix/lib/libnghttp2.a" -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DENABLE_LIB_ONLY=ON -DENABLE_STATIC_LIB=ON -DENABLE_SHARED_LIB=OFF \
+    -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON @options > "$output/$name-configure.log" 2>&1
+  "$cmake" --build "$output/$name" -j4 > "$output/$name-build.log" 2>&1
+  "$cmake" --install "$output/$name" > "$output/$name-install.log" 2>&1
+}
+library nghttp2
+library curl -DBUILD_CURL_EXE=OFF -DHTTP_ONLY=ON -DCURL_USE_OPENSSL=ON \
+  -DCURL_USE_PKGCONFIG=OFF -DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=OFF -DOPENSSL_USE_STATIC_LIBS=TRUE \
+  "-DOPENSSL_ROOT_DIR=$prefix" -DOPENSSL_USE_STATIC_LIBS=ON -DUSE_NGHTTP2=ON \
+  -DCURL_USE_LIBPSL=OFF -DUSE_LIBIDN2=OFF -DCURL_ZLIB=OFF -DCURL_BROTLI=OFF \
+  -DCURL_ZSTD=OFF -DCURL_DISABLE_PROXY=ON -DCURL_DISABLE_COOKIES=ON \
+  -DCURL_DISABLE_ALTSVC=ON -DCURL_DISABLE_HSTS=ON -DENABLE_THREADED_RESOLVER=OFF \
+  -DBUILD_LIBCURL_DOCS=OFF -DENABLE_CURL_MANUAL=OFF
+"$compiler" --version > "$output/foreign-compiler.txt"
+sha256sum "$compiler" "$prefix/lib/libcurl.a" "$prefix/lib/libnghttp2.a" "$prefix/lib/libssl.a" "$prefix/lib/libcrypto.a" > "$output/foreign-digests.txt"
+echo 'PASS pinned foreign HTTP/2 C libraries through ICK; OpenSSL no-asm; NDK supplies headers and archive tools only'

@@ -1,4 +1,4 @@
-name: FastChat A1 arena APK producer
+name: FastChat A1 convergence candidate
 on:
   pull_request:
   workflow_dispatch:
@@ -8,11 +8,11 @@ permissions:
 jobs:
   a1-apk:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       ASAN_OPTIONS: detect_leaks=0
-      ANDROID_VERSION_CODE: '3'
-      ANDROID_VERSION_NAME: '0.3-arena'
+      ANDROID_VERSION_CODE: '4'
+      ANDROID_VERSION_NAME: '0.4-candidate'
       ANDROID_MIN_SDK: '26'
       ANDROID_TARGET_SDK: '34'
       ANDROID_KEYSTORE_TYPE: JKS
@@ -55,6 +55,8 @@ jobs:
         run: sudo apt-get update
       - name: Matching GNU ARM assembler
         run: sudo apt-get install -y binutils-arm-linux-gnueabi libgmp10 libmpfr6 libmpc3 libisl23 libzstd1 ripgrep
+      - name: Explicit GNU assembler under ICK
+        run: ln -s /usr/bin/arm-linux-gnueabi-as compiler/as
       - name: Pinned Icky Lua source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -75,10 +77,20 @@ jobs:
           packages: ''
       - name: Exact SDK and NDK
         run: sdkmanager 'ndk;29.0.14206865' 'build-tools;34.0.0' 'platforms;android-34'
+      - name: Pinned foreign build generator
+        run: python3 -m pip install cmake==4.4.0
+      - name: Exact HTTP2 dependency sources
+        run: grease/_bin/cxx-asan/ysh _/transport/fetch.grease "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/http2-sources" 2
+      - name: HTTP2 C dependencies through ICK, platform feature-probe link
+        run: >
+          grease/_bin/cxx-asan/ysh scripts/build-http2-libraries.grease
+          "$GITHUB_WORKSPACE/http2-sources" "$GITHUB_WORKSPACE/http2"
+          "$ANDROID_HOME/ndk/29.0.14206865" a1 "$(command -v cmake)"
+          "$GITHUB_WORKSPACE/compiler/xgcc" "$GITHUB_WORKSPACE/compiler"
       - name: ICK C and Icky Lua runtime; platform link
         run: >
           grease/_bin/cxx-asan/ysh scripts/build-native.grease
-          compiler/xgcc compiler "$ANDROID_HOME/ndk/29.0.14206865" icky-lua native
+          compiler/xgcc compiler "$ANDROID_HOME/ndk/29.0.14206865" icky-lua native "$GITHUB_WORKSPACE/http2/prefix"
       - name: Stable signer APK packaging
         run: >
           env ANDROID_BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
@@ -89,7 +101,7 @@ jobs:
       - name: Preserve stripped artifact and producer receipts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: a1-arena-apk-${{ github.event.pull_request.head.sha || github.sha }}
+          name: a1-convergence-apk-${{ github.event.pull_request.head.sha || github.sha }}
           if-no-files-found: error
           path: |
             fastchat.apk
@@ -97,3 +109,9 @@ jobs:
             native/native-abi.txt
             native/native-digests.txt
             native/native-sizes.txt
+            native/linker-identity.txt
+            native/assembler-identity.txt
+            native/source-binding.tsv
+            http2/foreign-compiler.txt
+            http2/foreign-digests.txt
+            http2/ick-platform.cmake

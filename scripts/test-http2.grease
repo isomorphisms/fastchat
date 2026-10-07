@@ -1,0 +1,22 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) < 4) {
+  echo 'usage: test-http2.grease ICK_DRIVER ICK_LIBEXEC HTTP2_PREFIX OUTPUT [host options...]'
+  exit 2
+}
+var compiler = ARGV[0]
+var support = ARGV[1]
+var prefix = ARGV[2]
+var output = ARGV[3]
+var options = ARGV[4:]
+var directory = $(dirname "$0")
+var repository = $(realpath "$directory/..")
+"$compiler" "-B$support/" -std=c11 -O2 -D_FILE_OFFSET_BITS=64 -Wall -Wextra -Werror \
+  "-I$repository/src" "-I$repository/transport/native" "-I$repository/third-party/appendfat-arena" "-I$prefix/include" \
+  -ffunction-sections -fdata-sections @options "$repository/src/conversation.c" "$repository/src/provider.c" \
+  "$repository/src/transport_boundary.c" "$repository/transport/native/curl_transport.c" \
+  "$repository/transport/native/sse.c" "$repository/transport/native/provider_framing.c" \
+  "$repository/tests/http2_boundary.c" -Wl,--gc-sections \
+  "$prefix/lib/libcurl.a" "$prefix/lib/libnghttp2.a" "$prefix/lib/libssl.a" "$prefix/lib/libcrypto.a" \
+  -lpthread -ldl -lm -o "$output"
+sha256sum "$output"

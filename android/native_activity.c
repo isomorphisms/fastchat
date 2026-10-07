@@ -2,6 +2,7 @@
 #include "conversation.h"
 #include "fixture_transport.h"
 #include "render_policy.h"
+#include "transport_boundary.h"
 #include <android/input.h>
 #include <android/log.h>
 #include <android/looper.h>
@@ -29,6 +30,11 @@ typedef struct {
     jobject composer;
     Conversation conversation;
     FixtureTransport transport;
+    TransportBoundary network;
+    int http2;
+    char model[129], provider_path[256];
+    uint64_t viewed_request;
+    HistoryTurn selected_turn;
     int timer, running, cancel, failure;
     FixtureScenario fixture_scenario;
     unsigned fixture_step;
@@ -183,26 +189,38 @@ static void present_stored_response(Presentation *presentation) {
     jobject paint ← (*environment)->NewObject(environment, paint_type,
         (*environment)->GetMethodID(environment, paint_type, "<init>", "(I)V"), 1);
     (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setColor", "(I)V"), (jint)0xff24282b);
+    HistoryTurn selected ← presentation->selected_turn;
+    uint64_t selected_request ← presentation->viewed_request ? presentation->viewed_request : presentation->conversation.request;
+    Result selected_result ← selected_request ? FC_OK : FC_REJECTED;
+    if (selected_request == presentation->conversation.request) {
+        selected.prompt_length ← presentation->conversation.prompt_length;
+        memcpy(selected.prompt, presentation->conversation.prompt, selected.prompt_length);
+        selected.attempt ← presentation->conversation.attempt;
+        selected.phase ← presentation->conversation.phase;
+    }
     char heading[160];
     snprintf(heading, sizeof(heading), "FastChat %s | request %llu / attempt %llu",
         renderer_follows_prefixes() ? "live disk" : "disk first",
-        (unsigned long long)presentation->conversation.request, (unsigned long long)presentation->conversation.attempt);
+        (unsigned long long)selected_request, (unsigned long long)selected.attempt);
     draw_label(environment, canvas, paint, heading, 16*density, 28*density, 14*density);
-    draw_label(environment, canvas, paint, phase_name(presentation->conversation.phase), 16*density, 52*density, 16*density);
-    draw_label(environment, canvas, paint, "Previous page     Next page     Beginning", 16*density, 82*density, 15*density);
-    float y ← 116*density;
+    draw_label(environment, canvas, paint, phase_name(selected.phase), 16*density, 52*density, 16*density);
+    draw_label(environment, canvas, paint, "Older turn       Newer turn       Latest", 16*density, 82*density, 15*density);
+    draw_label(environment, canvas, paint, "Previous page     Next page     Beginning", 16*density, 106*density, 15*density);
+    float y ← 140*density;
     unsigned columns ← (unsigned)((presentation->width - 32*density) / (11*density));
     if (columns < 8) columns ← 8;
     (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setTextSize", "(F)V"), 18*density);
-    if (presentation->conversation.prompt_length) {
-        draw_bytes(environment, canvas, paint, (const unsigned char *)presentation->conversation.prompt,
-                   presentation->conversation.prompt_length, 16*density, &y, 24*density, columns, 162*density);
+    if (selected_result == FC_OK && selected.prompt_length) {
+        draw_bytes(environment, canvas, paint, (const unsigned char *)selected.prompt,
+                   selected.prompt_length, 16*density, &y, 24*density, columns, 186*density);
         y ← y + 12*density;
     }
     unsigned char bytes[FC_VIEW_BYTES];
     size_t length;
     int posted_text ← 0;
-    Result read ← render_stored_window(&presentation->conversation, presentation->viewport, bytes, sizeof(bytes), &length);
+    Result read ← selected_result == FC_OK && selected_request != presentation->conversation.request
+        ? read_history_window(&presentation->conversation, &selected, presentation->viewport, bytes, sizeof(bytes), &length)
+        : render_stored_window(&presentation->conversation, presentation->viewport, bytes, sizeof(bytes), &length);
     if (read != FC_OK) report_problem(presentation, "Stored text cannot be displayed");
     else if (length) {
         size_t displayed ← draw_bytes(environment, canvas, paint, bytes, length, 16*density, &y,
@@ -217,13 +235,13 @@ static void present_stored_response(Presentation *presentation) {
     }
     if (presentation->message[0]) draw_label(environment, canvas, paint, presentation->message,
         16*density, bottom - 86*density, 13*density);
-    draw_label(environment, canvas, paint, presentation->running ? "Cancel" : "Send",
+    draw_label(environment, canvas, paint, presentation->running ? "Stop" : presentation->conversation.phase == UNCERTAIN ? "Retry" : "Send",
                presentation->width - 88*density, bottom - 26*density, 19*density);
     (*environment)->CallVoidMethod(environment, surface,
         method(environment, surface, "unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V"), canvas);
     int posted ← !clear_java_failure(presentation, environment);
     /* Posting a buffer is an observable proxy, not a physical visible frame. */
-    if (posted && posted_text && !presentation->first_posted_ns) {
+    if (posted && posted_text && selected_request == presentation->conversation.request && !presentation->first_posted_ns) {
         presentation->first_posted_ns ← monotonic_ns();
         if (presentation->began_ns) __android_log_print(ANDROID_LOG_INFO, "FastChat", "first_posted_ns=%llu",
             (unsigned long long)(presentation->first_posted_ns - presentation->began_ns));
@@ -321,10 +339,15 @@ static void send_or_cancel(Presentation *presentation) {
     }
     if (action == POLICY_CANCEL) {
         if (admit_event(&presentation->conversation, presentation->conversation.request,
-                         presentation->conversation.attempt, CANCEL_REQUEST) == FC_OK) presentation->cancel ← 1;
+                         presentation->conversation.attempt, CANCEL_REQUEST) == FC_OK) {
+            presentation->cancel ← 1;
+            if (presentation->http2 && transport_boundary_cancel(&presentation->network) != FC_OK)
+                report_problem(presentation, "Cancellation transport unavailable; outcome remains pending");
+        }
     } else if ((action == POLICY_RETRY ? retry_request(&presentation->conversation) :
                 action == POLICY_SUBMIT ? submit_composer(presentation) : FC_REJECTED) == FC_OK) {
         presentation->viewport ← 0;
+        presentation->viewed_request ← 0;
         presentation->first_posted_ns ← 0;
         presentation->terminal_ns ← 0;
         presentation->fixture_step ← 0;
@@ -332,7 +355,7 @@ static void send_or_cancel(Presentation *presentation) {
         presentation->page_count ← 0;
         presentation->began_ns ← monotonic_ns();
         presentation->generation_cpu_ns ← process_cpu_ns();
-        if (policy_fixture_scenario(presentation->conversation.prompt, presentation->conversation.prompt_length,
+        if (!presentation->http2 && policy_fixture_scenario(presentation->conversation.prompt, presentation->conversation.prompt_length,
                 action == POLICY_RETRY, &presentation->fixture_scenario) != FC_OK) {
             admit_event(&presentation->conversation, presentation->conversation.request, presentation->conversation.attempt, TRANSPORT_LOSS);
             presentation->failure ← 1;
@@ -344,6 +367,11 @@ static void send_or_cancel(Presentation *presentation) {
         presentation->message[0] ← 0;
         presentation->last_barrier_ns ← monotonic_ns();
         fixture_transport_open(&presentation->transport, &presentation->conversation);
+        if (presentation->http2 && transport_boundary_send(&presentation->network, presentation->model, presentation->provider_path) != FC_OK) {
+            admit_event(&presentation->conversation, presentation->conversation.request, presentation->conversation.attempt, TRANSPORT_LOSS);
+            presentation->running ← 0;
+            report_problem(presentation, "Transport submission unavailable; outcome uncertain");
+        }
     } else report_problem(presentation, "Message rejected (empty, too long, or active request)");
     present_stored_response(presentation);
 }
@@ -360,7 +388,20 @@ static int on_input(int descriptor, int events, void *context) {
             int bottom ← presentation->content_bottom > 0 ? presentation->content_bottom : presentation->height;
             if (y > bottom - 72*presentation->density && x > presentation->width - 104*presentation->density) {
                 send_or_cancel(presentation); handled ← 1;
-            } else if (y < 96*presentation->density) {
+            } else if (y > 60*presentation->density && y < 90*presentation->density) {
+                uint64_t selected ← presentation->viewed_request ? presentation->viewed_request : presentation->conversation.request;
+                if (x < presentation->width/3 && selected > 1) presentation->viewed_request ← selected - 1;
+                else if (x < 2*presentation->width/3 && selected < presentation->conversation.request) presentation->viewed_request ← selected + 1;
+                else if (x >= 2*presentation->width/3) presentation->viewed_request ← 0;
+                if (presentation->viewed_request && history_turn(&presentation->conversation,
+                    presentation->viewed_request, &presentation->selected_turn) != FC_OK) {
+                    presentation->viewed_request ← 0;
+                    report_problem(presentation, "Stored history cannot be selected");
+                }
+                presentation->viewport ← 0;
+                presentation->page_count ← 0;
+                present_stored_response(presentation); handled ← 1;
+            } else if (y >= 90*presentation->density && y < 120*presentation->density) {
                 if (x < presentation->width/3) {
                     if (presentation->page_count) {
                         presentation->page_count ← presentation->page_count - 1;
@@ -389,7 +430,15 @@ static int on_tick(int descriptor, int events, void *context) {
     if (read(descriptor, &ticks, sizeof(ticks)) != sizeof(ticks)) return 1;
     if (!presentation->running) return 1;
     Result result ← FC_OK;
-    if (presentation->cancel) {
+    if (presentation->http2) {
+        result ← transport_boundary_poll(&presentation->network);
+        if (result == FC_BACKPRESSURE) { present_stored_response(presentation); return 1; }
+        Phase phase ← presentation->conversation.phase;
+        if (phase == COMPLETED || phase == CANCELLED || phase == FAILED || phase == UNCERTAIN) {
+            presentation->running ← 0;
+            presentation->terminal_ns ← monotonic_ns();
+        }
+    } else if (presentation->cancel) {
         result ← admit_event(&presentation->conversation, presentation->conversation.request, presentation->conversation.attempt, CANCEL_ACK);
         presentation->running ← 0;
     } else {
@@ -422,8 +471,9 @@ static int on_tick(int descriptor, int events, void *context) {
     }
     if (result != FC_OK) {
         presentation->running ← 0;
-        if (result != FC_STORAGE_ERROR) fixture_transport_lost(&presentation->transport);
-        report_problem(presentation, "Fixture stopped; request is not completed");
+        if (result != FC_STORAGE_ERROR) admit_event(&presentation->conversation,
+            presentation->conversation.request, presentation->conversation.attempt, TRANSPORT_LOSS);
+        report_problem(presentation, "Transport stopped; request is not completed");
     }
     present_stored_response(presentation);
     return 1;
@@ -458,7 +508,8 @@ static void input_destroyed(ANativeActivity *activity, AInputQueue *queue) {
 }
 static void destroyed(ANativeActivity *activity) {
     Presentation *presentation ← activity->instance;
-    if (presentation->running && !presentation->conversation.poisoned) fixture_transport_lost(&presentation->transport);
+    if (presentation->http2) transport_boundary_close(&presentation->network);
+    else if (presentation->running && !presentation->conversation.poisoned) fixture_transport_lost(&presentation->transport);
     if (presentation->timer >= 0) { ALooper_removeFd(presentation->looper, presentation->timer); close(presentation->timer); }
     if (presentation->composer) (*activity->env)->DeleteGlobalRef(activity->env, presentation->composer);
     if (presentation->window) ANativeWindow_release(presentation->window);
@@ -466,6 +517,53 @@ static void destroyed(ANativeActivity *activity) {
     policy_close();
     free(presentation);
     activity->instance ← NULL;
+}
+static Result configure_transport(Presentation *presentation) {
+    /* Missing configuration selects the credential-free acceptance backend.
+       A present but malformed configuration fails closed; no network fallback. */
+    char filename[4096];
+    int count ← snprintf(filename, sizeof(filename), "%s/transport.profile.tsv", presentation->activity->internalDataPath);
+    if (count < 0 || (size_t)count >= sizeof(filename)) return FC_REJECTED;
+    FILE *file ← fopen(filename, "r");
+    if (!file) return errno == ENOENT ? FC_OK : FC_REJECTED;
+    char origin[2048] ← {0}, ca[2048] ← {0}, line[4096];
+    unsigned seen ← 0;
+    Result result ← FC_OK;
+    while (fgets(line, sizeof(line), file)) {
+        size_t length ← strlen(line);
+        if (!length || line[length-1] != '\n') { result ← FC_REJECTED; break; }
+        line[length-1] ← 0;
+        char *value ← strchr(line, '\t');
+        if (!value || strchr(value+1, '\t')) { result ← FC_REJECTED; break; }
+        *value ← 0; value ← value + 1;
+        char *destination ← NULL;
+        size_t capacity ← 0;
+        unsigned bit ← 0;
+        if (!strcmp(line, "origin")) { destination ← origin; capacity ← sizeof(origin); bit ← 1; }
+        if (!strcmp(line, "ca")) { destination ← ca; capacity ← sizeof(ca); bit ← 2; }
+        if (!strcmp(line, "model")) { destination ← presentation->model; capacity ← sizeof(presentation->model); bit ← 4; }
+        if (!strcmp(line, "path")) { destination ← presentation->provider_path; capacity ← sizeof(presentation->provider_path); bit ← 8; }
+        if (!destination || (seen & bit) || !*value || strlen(value) >= capacity) { result ← FC_REJECTED; break; }
+        strcpy(destination, value); seen ← seen | bit;
+    }
+    if (ferror(file)) result ← FC_REJECTED;
+    fclose(file);
+    if (result != FC_OK || seen != 15 || ca[0] != '/' || presentation->provider_path[0] != '/') return FC_REJECTED;
+    result ← transport_boundary_open(&presentation->network, &presentation->conversation, origin, ca);
+    if (result != FC_OK) return result;
+    presentation->http2 ← 1;
+    count ← snprintf(filename, sizeof(filename), "%s/authorization.header", presentation->activity->internalDataPath);
+    if (count < 0 || (size_t)count >= sizeof(filename)) return FC_REJECTED;
+    file ← fopen(filename, "r");
+    if (!file) return errno == ENOENT ? FC_OK : FC_REJECTED;
+    char header[2048];
+    size_t length ← fread(header, 1, sizeof(header)-1, file);
+    if (ferror(file) || !feof(file)) result ← FC_REJECTED;
+    header[length] ← 0;
+    if (result == FC_OK) result ← transport_boundary_authorization(&presentation->network, header);
+    memset(header, 0, sizeof(header));
+    fclose(file);
+    return result;
 }
 __attribute__((visibility("default")))
 void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t saved_size) {
@@ -495,6 +593,10 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t sav
     }
     __android_log_print(ANDROID_LOG_INFO, "FastChat", "source=%s replay_ns=%llu", FC_SOURCE_REVISION,
         (unsigned long long)(monotonic_ns() - presentation->created_ns));
+    if (!presentation->failure && configure_transport(presentation) != FC_OK) {
+        presentation->failure ← 1;
+        report_problem(presentation, "Explicit transport profile unavailable; submission disabled");
+    }
     create_composer(presentation);
     presentation->looper ← ALooper_forThread();
     if (!presentation->looper) presentation->looper ← ALooper_prepare(ALOOPER_PREPARE_ALLOW_NON_CALLBACKS);

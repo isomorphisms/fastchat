@@ -1,5 +1,11 @@
 # Disk-authoritative comparison
 
+Historical comparison description. The converged candidate is authoritative
+in [native-candidate.md](native-candidate.md): its shared arena is not truncated
+or permission-sealed, and its framing/provider implementation is shared between
+the deterministic and HTTP/2 backends. Earlier per-attempt and retry record
+descriptions below are reference evidence, not the candidate format contract.
+
 These experiments share a conversation core, file store, fixture protocol and
 Canvas/Paint renderer. The working C checkpoint is followed by the actual
 [Icky Lua composition pass](icky-lua-pass.md). FC-D1 reads a response only after its completion record;

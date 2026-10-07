@@ -19,15 +19,19 @@ The journal remains authoritative. FastChat does not use the arena library's
 already defines durable/committed response extents.
 
 The arena-backed journal is versioned as `FC02`; it is intentionally not read as the earlier per-attempt `FC01` store format. The record extent field is an absolute byte position in `responses.arena`.
-For SUBMIT/RETRY it records the new attempt base. For PREFIX and terminal
+SUBMIT/RETRY now record the distinct durable user decision with the prior
+attempt identity; ATTEMPT_SUBMIT records the fresh identity and monotone base.
+For PREFIX and terminal
 records it records `base + durable_extent`. The in-memory response extents
 remain relative to the current attempt, so the renderer and transport contracts
 do not change.
 
 ## Reservation and reuse
 
-The arena grows in 64 KiB quanta through
-`appendfat_arena_reserve_fd()`. Growth explicitly zero-fills only the new
+The candidate grows the arena in 64 KiB quanta through its owned bounded writer.
+The vendored allocator's original 256 KiB scratch buffer and unmetered pwrite
+path are not called. Reservation writes are at most 4096 bytes and count toward
+write_count, reserve_bytes and reserve_writes. Growth zero-fills only the new
 reserved tail. Completion does not truncate the arena. The next attempt starts
 at the previous high-water mark and consumes any remaining reserved capacity
 before another growth operation.

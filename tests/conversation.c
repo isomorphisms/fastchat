@@ -2,6 +2,7 @@
 #include "conversation.h"
 #include "fixture_transport.h"
 #include "render_policy.h"
+#include "provider.h"
 #include <assert.h>
 #include <dirent.h>
 #include <errno.h>
@@ -183,6 +184,251 @@ static void arena_reuse_case(void) {
     conversation_close(&conversation);
     remove_directory(path);
     puts("PASS shared response arena reuses reserved tail across attempts and replay");
+}
+static uint64_t record_number(const unsigned char *bytes, size_t length) {
+    uint64_t value ← 0;
+    for (size_t index ← length; index > 0; index ← index - 1) value ← (value << 8) | bytes[index-1];
+    return value;
+}
+static void set_record_number(unsigned char *bytes, uint64_t value, size_t length) {
+    for (size_t index ← 0; index < length; index ← index + 1) { bytes[index] ← (unsigned char)value; value ← value >> 8; }
+}
+static void native_retry_order_case(void) {
+    Conversation conversation;
+    char path[64];
+    fresh_conversation(&conversation, path);
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, TRANSPORT_LOSS) == FC_OK);
+    uint64_t before ← conversation.journal_end;
+    uint64_t old_attempt ← conversation.attempt;
+    uint64_t old_request ← conversation.request;
+    assert(retry_request(&conversation) == FC_OK);
+    unsigned char user[64], submitted[64];
+    assert(pread(conversation.journal, user, 64, (off_t)before) == 64);
+    /* Check the actual record kind and identities, not an event count. */
+    if (record_number(user+44, 4) != RETRY || strcmp(event_name((Event)record_number(user+44, 4)), "retry_requested")) {
+        fputs("FAIL missing canonical retry_requested before transport_attempt_submitted\n", stderr);
+        exit(91);
+    }
+    assert(pread(conversation.journal, submitted, 64, (off_t)(before+64)) == 64);
+    assert(record_number(submitted+44, 4) == ATTEMPT_SUBMIT);
+    assert(record_number(user+16, 8) == old_request && record_number(user+24, 8) == old_attempt);
+    assert(record_number(submitted+16, 8) == old_request && record_number(submitted+24, 8) == old_attempt+1);
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, path) == FC_OK && conversation.phase == UNCERTAIN);
+    assert(conversation.attempt == old_attempt+1);
+    conversation_close(&conversation);
+    remove_directory(path);
+    puts("PASS canonical retry_requested record precedes fresh transport_attempt_submitted with exact identities");
+}
+static void arena_hostile_cases(void) {
+    Conversation conversation;
+    char path[64];
+    for (int corruption ← 0; corruption < 5; corruption ← corruption + 1) {
+        fresh_conversation(&conversation, path);
+        feed_bytes(&conversation, (const unsigned char *)"first immutable body", 20);
+        finish_conversation(&conversation);
+        uint64_t first_end ← conversation.arena_high_water;
+        assert(submit_text(&conversation, "second", 6) == FC_OK);
+        assert(conversation.response_base == first_end);
+        assert(admit_event(&conversation, conversation.request, conversation.attempt, START) == FC_OK);
+        feed_bytes(&conversation, (const unsigned char *)"second body", 11);
+        finish_conversation(&conversation);
+        if (corruption == 0) assert(pwrite(conversation.response, "X", 1, 0) == 1);
+        if (corruption == 1) assert(ftruncate(conversation.response, (off_t)(first_end+10)) == 0);
+        if (corruption >= 2) {
+            unsigned char record[64];
+            uint64_t offset ← conversation.journal_end - 64;
+            assert(pread(conversation.journal, record, 64, (off_t)offset) == 64);
+            if (corruption == 2) set_record_number(record+32, first_end-1, 8);
+            if (corruption == 3) set_record_number(record+24, conversation.attempt-1, 8);
+            if (corruption == 4) memcpy(record, "FC01", 4);
+            memset(record+60, 0, 4);
+            set_record_number(record+60, checksum_bytes(0xffffffffu, record, 64), 4);
+            assert(pwrite(conversation.journal, record, 64, (off_t)offset) == 64);
+        }
+        assert(fsync(conversation.response) == 0 && fsync(conversation.journal) == 0);
+        conversation_close(&conversation);
+        assert(conversation_open(&conversation, path) == FC_CORRUPT);
+        conversation_close(&conversation);
+        remove_directory(path);
+    }
+    for (int stage ← 0; stage < 2; stage ← stage + 1) {
+        fresh_conversation(&conversation, path);
+        feed_bytes(&conversation, (const unsigned char *)"durable before journal", 22);
+        uint64_t before ← conversation.journal_end;
+        conversation.fail_barrier_after ← stage;
+        assert(commit_stored_prefix(&conversation) == FC_STORAGE_ERROR);
+        assert(conversation.extents.committed == 0 && conversation.journal_end == before);
+        assert(conversation.extents.durable == (stage ? 22u : 0u));
+        conversation_close(&conversation);
+        remove_directory(path);
+    }
+    fresh_conversation(&conversation, path);
+    conversation.write_budget ← 3;
+    WriteResult exhausted ← store_response_bytes(&conversation, conversation.request, conversation.attempt, "x", 1);
+    assert(exhausted.result == FC_STORAGE_ERROR && exhausted.consumed == 0);
+    assert(conversation.measurements.reserve_bytes == 3 && conversation.extents.written == 0);
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, path) == FC_OK && conversation.phase == UNCERTAIN);
+    conversation_close(&conversation);
+    remove_directory(path);
+    puts("PASS arena corrupt old bytes, torn/stale extents, FC01 refusal, ordered failed barriers and reservation disk exhaustion");
+}
+static void durability_death_cases(void) {
+    for (int stage ← 1; stage <= 4; stage ← stage + 1) {
+        char path[] ← "/tmp/fastchat-stages-XXXXXX";
+        assert(mkdtemp(path));
+        pid_t child ← fork();
+        assert(child >= 0);
+        if (!child) {
+            Conversation conversation;
+            if (conversation_open(&conversation, path) != FC_OK || submit_text(&conversation, "crash", 5) != FC_OK
+                || admit_event(&conversation, conversation.request, conversation.attempt, START) != FC_OK) _exit(70);
+            conversation.crash_at ← stage;
+            if (store_response_bytes(&conversation, conversation.request, conversation.attempt, "prefix", 6).result != FC_OK) _exit(71);
+            commit_stored_prefix(&conversation);
+            _exit(72);
+        }
+        int status;
+        assert(waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 73);
+        Conversation replay;
+        assert(conversation_open(&replay, path) == FC_OK && replay.phase == UNCERTAIN);
+        assert(replay.extents.committed == (stage < 3 ? 0u : 6u));
+        assert(retry_request(&replay) == FC_OK);
+        assert(replay.response_base == (stage < 3 ? 0u : 6u));
+        conversation_close(&replay);
+        remove_directory(path);
+    }
+    puts("PASS fresh-process death after data write, response fsync, journal write and journal fsync; no invented completion");
+}
+static void pending_decision_case(void) {
+    Conversation conversation;
+    char path[64];
+    fresh_conversation(&conversation, path);
+    feed_bytes(&conversation, (const unsigned char *)"old", 3);
+    finish_conversation(&conversation);
+    uint64_t before ← conversation.journal_end;
+    assert(submit_text(&conversation, "new", 3) == FC_OK);
+    assert(ftruncate(conversation.journal, (off_t)(before + 64 + 3)) == 0);
+    assert(fsync(conversation.journal) == 0);
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, path) == FC_OK);
+    assert(conversation.request == 2 && conversation.phase == UNCERTAIN && conversation.extents.committed == 0);
+    HistoryTurn current, prior;
+    assert(history_turn(&conversation, 2, &current) == FC_OK && current.extent == 0);
+    assert(history_turn(&conversation, 1, &prior) == FC_OK && prior.extent == 3);
+    assert(retry_request(&conversation) == FC_OK);
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, START) == FC_OK);
+    assert(store_response_bytes(&conversation, conversation.request, conversation.attempt, "\xc0\x80", 2).result == FC_INVALID_TEXT);
+    assert(store_response_bytes(&conversation, conversation.request, conversation.attempt, "\xe2", 1).result == FC_OK);
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, COMPLETE) == FC_REJECTED);
+    assert(store_response_bytes(&conversation, conversation.request, conversation.attempt, "\x82\xac", 2).result == FC_OK);
+    finish_conversation(&conversation);
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, path) == FC_OK && conversation.phase == COMPLETED);
+    conversation_close(&conversation);
+    remove_directory(path);
+    puts("PASS user decision interrupted before attempt has no prior response; incremental UTF-8 rejects invalid/truncated completion");
+}
+static void history_case(void) {
+    Conversation conversation;
+    char path[64];
+    fresh_conversation(&conversation, path);
+    feed_bytes(&conversation, (const unsigned char *)"older", 5);
+    finish_conversation(&conversation);
+    assert(submit_text(&conversation, "newer prompt", 12) == FC_OK);
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, START) == FC_OK);
+    feed_bytes(&conversation, (const unsigned char *)"newer", 5);
+    finish_conversation(&conversation);
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, path) == FC_OK);
+    HistoryTurn older, newer;
+    assert(history_turn(&conversation, 1, &older) == FC_OK && history_turn(&conversation, 2, &newer) == FC_OK);
+    assert(older.phase == COMPLETED && newer.phase == COMPLETED && older.base+older.extent == newer.base);
+    assert(!strcmp(older.prompt, "hello") && !strcmp(newer.prompt, "newer prompt"));
+    unsigned char bytes[FC_VIEW_BYTES];
+    size_t length;
+    assert(read_history_window(&conversation, &older, 0, bytes, sizeof(bytes), &length) == FC_OK && length == 5 && !memcmp(bytes, "older", 5));
+    assert(read_history_window(&conversation, &newer, 0, bytes, sizeof(bytes), &length) == FC_OK && length == 5 && !memcmp(bytes, "newer", 5));
+    assert(history_turn(&conversation, 3, &newer) == FC_REJECTED);
+    conversation_close(&conversation);
+    remove_directory(path);
+    puts("PASS bounded durable history navigation preserves both turns after restart");
+}
+static void production_provider_cases(void) {
+    static const char delta[] ← "{\"type\":\"response.output_text.delta\",\"delta\":\"A\\u20ac\\ud83d\\ude42\\n```c\\nx\\n```\"}";
+    static const char completion[] ← "{\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}";
+    for (size_t cut ← 0; cut <= sizeof(delta)-1; cut ← cut + 1) {
+        Conversation conversation;
+        char path[64];
+        fresh_conversation(&conversation, path);
+        FixtureTransport transport;
+        fixture_transport_open(&transport, &conversation);
+        char frame[512];
+        int count ← snprintf(frame, sizeof(frame), "data: %s\n\n", delta);
+        size_t split ← cut < (size_t)count ? cut : (size_t)count;
+        assert(fixture_transport_offer(&transport, frame, split).result == FC_OK);
+        assert(fixture_transport_offer(&transport, frame+split, (size_t)count-split).result == FC_OK);
+        count ← snprintf(frame, sizeof(frame), "data: %s\n\n", completion);
+        for (int byte ← 0; byte < count; byte ← byte + 1) assert(fixture_transport_offer(&transport, frame+byte, 1).result == FC_OK);
+        assert(conversation.phase == COMPLETED);
+        static const unsigned char expected[] ← "A\xe2\x82\xac\xf0\x9f\x99\x82\n```c\nx\n```";
+        expect_bytes(&conversation, expected, sizeof(expected)-1);
+        conversation_close(&conversation);
+        assert(conversation_open(&conversation, path) == FC_OK && conversation.phase == COMPLETED);
+        expect_bytes(&conversation, expected, sizeof(expected)-1);
+        conversation_close(&conversation);
+        remove_directory(path);
+    }
+    static const char *bad[] ← {
+        "{}", "{\"type\":\"unknown\"}", "{\"type\":\"response.output_text.delta\",\"delta\":3}",
+        "{\"type\":\"response.output_text.delta\",\"delta\":\"\\ud800\"}",
+        "{\"type\":\"response.output_text.delta\",\"delta\":\"a\",\"delta\":\"b\"}",
+        "{\"type\":\"response.output_text.delta\",\"delta\":\"a\",\"\\u0064elta\":\"b\"}",
+        "{\"type\":\"response.completed\",\"response\":{\"status\":\"failed\"}}",
+        "{\"choices\":[{\"delta\":{\"content\":\"x\"}}]}garbage", "{\"choices\":[{\"delta\":{}} ,]}",
+        "{\"choices\":[{\"delta\":{},\"n\":01}]}", "{\"choices\":[{\"delta\":{},\"n\":1.}]}"
+    };
+    for (size_t index ← 0; index < sizeof(bad)/sizeof(bad[0]); index ← index + 1) {
+        Conversation conversation;
+        char path[64];
+        fresh_conversation(&conversation, path);
+        Provider provider;
+        provider_open(&provider, &conversation);
+        assert(provider_record(&provider, bad[index], strlen(bad[index])) == FC_INVALID_TEXT);
+        assert(conversation.phase != COMPLETED && conversation.extents.written == 0);
+        conversation_close(&conversation);
+        remove_directory(path);
+    }
+    Conversation conversation;
+    char path[64];
+    fresh_conversation(&conversation, path);
+    Provider provider;
+    provider_open(&provider, &conversation);
+    conversation.would_block ← 1;
+    assert(provider_record(&provider, delta, sizeof(delta)-1) == FC_BACKPRESSURE);
+    assert(provider.length > 0 && provider.written == 0);
+    assert(provider_record(&provider, delta, sizeof(delta)-1) == FC_BACKPRESSURE);
+    conversation.would_block ← 0;
+    assert(provider_resume(&provider) == FC_OK && provider.length == 0);
+    static const char tool[] ← "{\"type\":\"response.function_call_arguments.delta\",\"delta\":\"{}\",\"item_id\":\"fixture-item\"}";
+    uint64_t before ← conversation.sequence;
+    assert(provider_record(&provider, tool, sizeof(tool)-1) == FC_OK && conversation.sequence == before+2); /* prefix then tool */
+    static const char chat[] ← "{\"choices\":[{\"delta\":{\"content\":\"chat\",\"tool_calls\":[]},\"finish_reason\":null}]}";
+    assert(provider_record(&provider, chat, sizeof(chat)-1) == FC_OK);
+    static const char failure[] ← "{\"type\":\"error\",\"message\":\"fixture provider failure\"}";
+    assert(provider_record(&provider, failure, sizeof(failure)-1) == FC_OK && conversation.phase == FAILED);
+    assert(provider_record(&provider, delta, sizeof(delta)-1) == FC_REJECTED);
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, path) == FC_OK && conversation.phase == FAILED);
+    conversation_close(&conversation);
+    remove_directory(path);
+    char body[8192];
+    size_t length;
+    assert(provider_request_body("fixture-model", "quote\"\n\\", 8, body, sizeof(body), &length) == FC_OK);
+    assert(strstr(body, "quote\\\"\\u000a\\\\"));
+    assert(provider_request_body("bad\"model", "x", 1, body, sizeof(body), &length) == FC_REJECTED);
+    puts("PASS production-shaped SSE/JSON cuts, UTF-8/fences, ordinary text, explicit failure, malformed/truncated data, durable tool events and bounded backpressure");
 }
 
 static void cancellation_cases(void) {
@@ -822,6 +1068,12 @@ int main(int argc, char **argv) {
         return benchmark_response(argv[2], argv[3]);
 
     lua_policy_cases();
+    native_retry_order_case();
+    arena_hostile_cases();
+    durability_death_cases();
+    history_case();
+    pending_decision_case();
+    production_provider_cases();
     giant_framed_offer_case();
     prefix_visibility_case();
     response_cases();

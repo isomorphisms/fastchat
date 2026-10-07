@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   core:
     runs-on: ubuntu-24.04
@@ -89,14 +90,36 @@ jobs:
           compiler/build/gcc/xgcc -Bcompiler/build/gcc/
           -B/usr/lib/gcc/x86_64-linux-gnu/13/
           -isystem /usr/lib/gcc/x86_64-linux-gnu/13/include
-          -std=c11 -D_FILE_OFFSET_BITS=64 -O2 -Wall -Wextra -Werror
+          -std=c11 -D_FILE_OFFSET_BITS=64 -DFC_FAULT_TESTING -O2 -Wall -Wextra -Werror
           -Isrc -Ithird-party/appendfat-arena -Iicky-lua -DFC_POLICY_SOURCE='"policy/composition.lua"'
           -ffunction-sections -fdata-sections
-          src/conversation.c src/render_policy.c src/fixture_transport.c
+          src/conversation.c src/render_policy.c src/fixture_transport.c src/provider.c
+          transport/native/sse.c
           third-party/appendfat-arena/appendfat_arena.c
           tests/conversation.c icky-lua.o -Wl,--gc-sections -lm -ldl -o core-tests
       - name: Deterministic fault, transport and replay suite
         run: ./core-tests
+      - name: Exact Grease for hostile mutations
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          repository: dilapidated-shed/grease
+          run-id: 37478624499
+          artifact-ids: 11419719229
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: grease
+      - name: Verify and prepare Grease
+        run: |
+          chmod +x grease/_bin/cxx-asan/ysh
+          echo '7e31cd05b7a9d8fb2a4a9e003a7f3fcb0159138506d17f0fb28da8cbe22aa85c  grease/_bin/cxx-asan/ysh' | sha256sum -c -
+          sudo sysctl vm.mmap_rnd_bits=28
+      - name: Targeted retry, response barrier and response checksum mutations
+        run: >
+          env ASAN_OPTIONS=detect_leaks=0 FC_GREASE="$GITHUB_WORKSPACE/grease/_bin/cxx-asan/ysh"
+          grease/_bin/cxx-asan/ysh scripts/mutation-core.grease
+          "$GITHUB_WORKSPACE/compiler/build/gcc/xgcc" "$GITHUB_WORKSPACE/compiler/build/gcc"
+          "$GITHUB_WORKSPACE/icky-lua" "$GITHUB_WORKSPACE/mutations"
+          -B/usr/lib/gcc/x86_64-linux-gnu/13/ -isystem /usr/lib/gcc/x86_64-linux-gnu/13/include
       - name: Branch measurement
         run: ./core-tests benchmark "$(cat ci/renderer-mode)" benchmark-store
       - name: Fresh-process completed replay
@@ -116,4 +139,3 @@ jobs:
             compiler/build/gcc/xgcc
             compiler/build/gcc/cc1
             compiler/build/gcc/collect2
-

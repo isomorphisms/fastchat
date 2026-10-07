@@ -2,4 +2,6 @@ build_id	target	toolchain	ick_revision	ick_status	ick_evidence
 host-conversation-and-lua	x86_64-linux-gnu	ick	515c0f29fe6e2e96e10495fbaf25da93532e7722	qualified	notes/icky-lua-pass.md
 native-conversation-and-lua	armeabi-v7a-api26	ick	515c0f29fe6e2e96e10495fbaf25da93532e7722	qualified	notes/icky-lua-pass.md
 native-platform-link	armeabi-v7a-api26	ndk	515c0f29fe6e2e96e10495fbaf25da93532e7722	gap:android-platform-crt-linker-runtime	notes/disk-path.md
-
+host-http2-and-provider	x86_64-linux-gnu	ick	515c0f29fe6e2e96e10495fbaf25da93532e7722	qualified	notes/native-candidate.md
+native-http2-and-provider	armeabi-v7a-api26	ick	515c0f29fe6e2e96e10495fbaf25da93532e7722	qualified	notes/native-candidate.md
+native-foreign-feature-probe-link	armeabi-v7a-api26	ndk	515c0f29fe6e2e96e10495fbaf25da93532e7722	gap:android-platform-crt-linker-runtime	notes/native-candidate.md
