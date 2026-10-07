@@ -23,6 +23,7 @@ jobs:
           repository: dilapidated-shed/ick
           run-id: 37580514958
           artifact-ids: 11464479465
+          merge-multiple: true
           github-token: ${{ github.token }}
           path: compiler
       - name: Exact Grease producer runtime
@@ -31,6 +32,7 @@ jobs:
           repository: dilapidated-shed/grease
           run-id: 37476471876
           artifact-ids: 11419782646
+          merge-multiple: true
           github-token: ${{ github.token }}
           path: grease
       - name: Artifact executable permissions
