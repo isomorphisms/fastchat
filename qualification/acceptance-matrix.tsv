@@ -1,25 +1,25 @@
-case	expected_result	status
-empty_response	completed immutable zero-byte response; terminal marker visible	NOT_RUN
-one_chunk	exact response bytes; one canonical completion	NOT_RUN
-many_chunks	exact response bytes regardless of boundaries	NOT_RUN
-utf8_split	exact bytes retained; no invalid displayed UTF-8	NOT_RUN
-byte_preservation	RAM and disk completed byte streams match exactly	NOT_RUN
-interrupted_write	no committed completion; short-write result propagated	NOT_RUN
-restart_interrupted	partial attempt distinguished; no invented remote completion	NOT_RUN
-restart_completed	immutable response and canonical events replay exactly	NOT_RUN
-duplicate_terminal	first admitted terminal event only; duplicate diagnostic	NOT_RUN
-stale_attempt	old-attempt event rejected; canonical journal unchanged	NOT_RUN
-cancellation	request-scoped pending cancellation; first admitted terminal wins	NOT_RUN
-uncertain_delivery	explicit uncertain state; explicit retry with fresh attempt	NOT_RUN
-ram_control	completed logical response and canonical events equal disk sink	NOT_RUN
-sse_json_split	framing decoded across boundaries before response-byte admission	NOT_RUN
-markdown_split	renderer state survives delimiter and code-fence splits	NOT_RUN
-tiny_chunks	bounded buffering; exact bytes and canonical semantics	NOT_RUN
-giant_chunk	bounded slice writes; producer receives explicit backpressure	NOT_RUN
-empty_keepalive	no spurious response bytes or terminal completion	NOT_RUN
-slow_renderer	bounded viewport and store cursor; no full-answer private copy	NOT_RUN
-slow_store	producer throttled; no silent drops or unbounded queue	NOT_RUN
-completion_cancel_race	deterministic first admitted terminal wins in both orderings	NOT_RUN
-torn_commit_record	replay rejects incomplete record; no invented completion	NOT_RUN
-durability_batch	written and durable extents distinguishable before barrier	NOT_RUN
-storage_exhaustion	no acknowledged durable event after failed write/barrier	NOT_RUN
+case	expected_result	host_status	a1_status	host_evidence
+empty_response	completed immutable zero-byte response; terminal marker visible	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+one_chunk	exact response bytes; one canonical completion	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+many_chunks	exact response bytes regardless of boundaries	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+utf8_split	exact bytes retained; no invalid displayed UTF-8	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+byte_preservation	RAM and disk completed byte streams match exactly	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+interrupted_write	no committed completion; short-write result propagated	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+restart_interrupted	partial attempt distinguished; no invented remote completion	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+restart_completed	immutable response and canonical events replay exactly	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+duplicate_terminal	first admitted terminal event only; duplicate diagnostic	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+stale_attempt	old-attempt event rejected; canonical journal unchanged	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+cancellation	request-scoped pending cancellation; first admitted terminal wins	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+uncertain_delivery	explicit uncertain state; explicit retry with fresh attempt	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+ram_control	RAM and disk completed logical response bytes match exactly; sealed sinks	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+sse_json_split	framing decoded across boundaries before response-byte admission	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+markdown_split	plain-text delimiter and code-fence bytes preserved across splits	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+tiny_chunks	bounded buffering; exact bytes and canonical semantics	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+giant_chunk	bounded slice writes; producer receives explicit backpressure	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+empty_keepalive	no spurious response bytes or terminal completion	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+slow_renderer	bounded viewport and store cursor; no full-answer private copy	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+slow_store	producer throttled; no silent drops or unbounded queue	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+completion_cancel_race	deterministic first admitted terminal wins in both orderings	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+torn_commit_record	replay rejects incomplete record; no invented completion	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+durability_batch	written and durable extents distinguishable before barrier	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+storage_exhaustion	no acknowledged durable event after failed write/barrier	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
