@@ -1,6 +1,6 @@
 # FC-S1 — disk-backed live-streaming comparison
 
-Status: **BLOCKED at the Icky C frontend prerequisite; not implemented**.
+Status: **assignment syntax passes on the pinned compiler fix; application not implemented**.
 
 Independent branch: `sun/disk-streaming-icky-c-lua`.
 Exact fetched main base: `b49f0f7083d2d034ba76b910a43592d6d07bd18b`.
@@ -55,10 +55,11 @@ streams exactly. All measurements are **NOT_RUN**, not zero.
 
 ## First blocker and subsequent gates
 
-The arrow probe fails with the owned ICK C frontend; the ordinary-C control
-passes. [Exact receipt](../qualification/icky-assignment/README.md).
+The unchanged arrow probe now passes with the owned rebuilt ICK on its pinned
+fix branch. [Fixed frontend receipt](../qualification/icky-assignment/fixed-frontend.md).
+The original failure diagnostics remain in the historical receipt.
 
-After that prerequisite exists, the complete C streaming slice, fault/replay
+With the pinned compiler prerequisite, the complete C streaming slice, fault/replay
 tests, A1 native packaging and later Lua refactor remain required.
 The sibling disk-first branch has no working implementation yet; it is not a
 merge prerequisite. This branch does not inherit Idriç code or depend on merging
@@ -66,3 +67,4 @@ the semantic reference.
 
 A1 artifact, signer/update identity, physical execution and the FC-D1 comparison
 are **BLOCKED/NOT_RUN**. No compiler is to be installed on the phone.
+
