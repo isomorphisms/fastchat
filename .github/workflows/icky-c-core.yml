@@ -54,3 +54,13 @@ jobs:
         run: ./core-tests
       - name: Source and executable identity
         run: sha256sum src/conversation.c src/conversation.h tests/conversation.c core-tests
+      - name: Measure disk-first C control in a separate process
+        run: ./core-tests benchmark disk-first benchmark-disk
+      - name: Measure streaming C control in a separate process
+        run: ./core-tests benchmark streaming benchmark-streaming
+      - name: Measure RAM control in a separate process
+        run: ./core-tests benchmark ram unused
+      - name: Compare canonical event bytes
+        run: cmp benchmark-disk/history.events benchmark-streaming/history.events
+      - name: Compare completed response bytes
+        run: cmp benchmark-disk/attempt-1.bytes benchmark-streaming/attempt-1.bytes

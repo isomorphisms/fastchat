@@ -312,7 +312,91 @@ static void ram_control_case(void) {
     remove_directory(path);
     puts("PASS RAM control and disk exact completed logical response, sealed sinks");
 }
-int main(void) {
+
+static int benchmark_response(const char *mode, const char *path) {
+    int ram ← strcmp(mode, "ram") == 0;
+    int streaming ← strcmp(mode, "streaming") == 0;
+    Conversation conversation;
+    RamControl control ← {0};
+    if (!ram) {
+        assert(conversation_open(&conversation, path) == FC_OK);
+        assert(conversation.phase == IDLE);
+        assert(submit_text(&conversation, "benchmark", 9) == FC_OK);
+        assert(admit_event(&conversation, conversation.request, conversation.attempt, START) == FC_OK);
+    }
+    unsigned char offered[FC_WRITE_BYTES];
+    memset(offered, 'a', sizeof(offered));
+    unsigned char viewport[FC_VIEW_BYTES];
+    size_t count;
+    uint64_t shown ← 0;
+    uint32_t displayed_crc ← 0xffffffffu;
+    double began ← clock_seconds(CLOCK_MONOTONIC);
+    double cpu_began ← clock_seconds(CLOCK_PROCESS_CPUTIME_ID);
+    double first_visible ← -1;
+    for (size_t fragment ← 0; fragment < 2048; fragment ← fragment + 1) {
+        if (ram) assert(ram_write(&control, offered, sizeof(offered)));
+        else {
+            feed_bytes(&conversation, offered, sizeof(offered));
+            if (streaming) {
+                assert(read_response_window(&conversation, shown, 1, viewport, sizeof(viewport), &count) == FC_OK);
+                if (count) {
+                    if (first_visible < 0) first_visible ← clock_seconds(CLOCK_MONOTONIC) - began;
+                    displayed_crc ← checksum_bytes(displayed_crc, viewport, count);
+                    shown ← shown + count;
+                }
+            }
+        }
+    }
+    double generating_cpu ← clock_seconds(CLOCK_PROCESS_CPUTIME_ID) - cpu_began;
+    double terminal ← clock_seconds(CLOCK_MONOTONIC);
+    if (ram) ram_finish(&control);
+    else finish_conversation(&conversation);
+    double first_final ← -1;
+    while (shown < 8 * 1024 * 1024) {
+        if (ram) {
+            count ← control.length - shown > sizeof(viewport) ? sizeof(viewport) : (size_t)(control.length - shown);
+            memcpy(viewport, control.bytes + shown, count);
+        } else assert(read_response_window(&conversation, shown, streaming, viewport, sizeof(viewport), &count) == FC_OK);
+        assert(count);
+        double now ← clock_seconds(CLOCK_MONOTONIC);
+        if (first_visible < 0) first_visible ← now - began;
+        if (first_final < 0) first_final ← now - terminal;
+        displayed_crc ← checksum_bytes(displayed_crc, viewport, count);
+        shown ← shown + count;
+    }
+    double drain_latency ← clock_seconds(CLOCK_MONOTONIC) - terminal;
+    struct rusage usage;
+    assert(getrusage(RUSAGE_SELF, &usage) == 0);
+    if (ram) {
+        printf("mode\tpeak_rss_kib\tresponse_bytes\tdata_bytes\tjournal_bytes\twrites\tmax_write\tmax_view\tfirst_text_ms\tterminal_first_window_ms\tterminal_drain_ms\tgeneration_cpu_ms\treplay_ms\tresponse_crc\n");
+        printf("ram\t%ld\t%zu\t0\t0\t0\t0\t%u\t%.3f\t%.3f\t%.3f\t%.3f\tNOT_APPLICABLE\t%08x\n",
+               usage.ru_maxrss, control.length, FC_VIEW_BYTES, first_visible * 1000,
+               first_final * 1000, drain_latency * 1000, generating_cpu * 1000, displayed_crc);
+        free(control.bytes);
+    } else {
+        StoreMeasurements measurements ← conversation.measurements;
+        assert(displayed_crc == conversation.response_crc);
+        conversation_close(&conversation);
+        double replay_began ← clock_seconds(CLOCK_MONOTONIC);
+        assert(conversation_open(&conversation, path) == FC_OK && conversation.phase == COMPLETED);
+        double replay_time ← clock_seconds(CLOCK_MONOTONIC) - replay_began;
+        assert(conversation.response_crc == displayed_crc && conversation.extents.committed == shown);
+        conversation_close(&conversation);
+        printf("mode\tpeak_rss_kib\tresponse_bytes\tdata_bytes\tjournal_bytes\twrites\tmax_write\tmax_view\tfirst_text_ms\tterminal_first_window_ms\tterminal_drain_ms\tgeneration_cpu_ms\treplay_ms\tresponse_crc\n");
+        printf("%s\t%ld\t%llu\t%llu\t%llu\t%llu\t%zu\t%zu\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%08x\n",
+               mode, usage.ru_maxrss, (unsigned long long)shown,
+               (unsigned long long)measurements.data_bytes, (unsigned long long)measurements.journal_bytes,
+               (unsigned long long)measurements.write_count, measurements.maximum_write, measurements.maximum_view,
+               first_visible * 1000, first_final * 1000, drain_latency * 1000,
+               generating_cpu * 1000, replay_time * 1000, displayed_crc);
+    }
+    return 0;
+}
+
+int main(int argc, char **argv) {
+    if (argc == 4 && strcmp(argv[1], "benchmark") == 0)
+        return benchmark_response(argv[2], argv[3]);
+
     response_cases();
     cancellation_cases();
     interrupted_cases();
