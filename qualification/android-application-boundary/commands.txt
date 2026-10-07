@@ -1,0 +1,15 @@
+Recorded build-host invocations, not a user shell script. Absolute paths identify this receipt environment.
+
+env LD_LIBRARY_PATH=/workspace/scratch/9a823f093abb/deps/usr/lib/x86_64-linux-gnu /workspace/scratch/f48f7b33f935/compiler-arrow/gcc/xgcc -B/workspace/scratch/f48f7b33f935/compiler-arrow/gcc/ -std=c11 -Wall -Wextra -Werror -fsyntax-only -nostdinc /workspace/scratch/f48f7b33f935/fastchat-probe/assignment-arrow.c
+
+env LD_LIBRARY_PATH=/workspace/scratch/9a823f093abb/deps/usr/lib/x86_64-linux-gnu /workspace/scratch/f48f7b33f935/compiler-arrow/gcc/xgcc -B/workspace/scratch/f48f7b33f935/compiler-arrow/gcc/ -isystem /workspace/scratch/9a823f093abb/deps/usr/aarch64-linux-gnu/include -B/workspace/scratch/9a823f093abb/deps/usr/lib/gcc-cross/aarch64-linux-gnu/13/ -B/workspace/scratch/9a823f093abb/deps/usr/aarch64-linux-gnu/lib/ -L/workspace/scratch/9a823f093abb/deps/usr/lib/gcc-cross/aarch64-linux-gnu/13/ -L/workspace/scratch/9a823f093abb/deps/usr/aarch64-linux-gnu/lib/ -static -std=c11 -O2 -Wall -Wextra -Werror /workspace/scratch/de9e8fcd5e57/fastchat-disk/qualification/android-application-boundary/host-files-probe.c -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group -o /workspace/scratch/de9e8fcd5e57/host-files-probe
+
+env LD_LIBRARY_PATH=/workspace/scratch/9a823f093abb/deps/usr/lib/x86_64-linux-gnu /workspace/scratch/9a823f093abb/deps/usr/bin/qemu-aarch64 /workspace/scratch/de9e8fcd5e57/host-files-probe /workspace/scratch/de9e8fcd5e57/file-probe-output
+
+env LD_LIBRARY_PATH=/workspace/scratch/9a823f093abb/deps/usr/lib/x86_64-linux-gnu /workspace/scratch/f48f7b33f935/compiler-arrow/gcc/xgcc -B/workspace/scratch/f48f7b33f935/compiler-arrow/gcc/ -std=c11 -Wall -Wextra -Werror -fsyntax-only /workspace/scratch/de9e8fcd5e57/fastchat-disk/qualification/android-application-boundary/nullability-probe.c
+
+env LD_LIBRARY_PATH=/workspace/scratch/9a823f093abb/deps/usr/lib/x86_64-linux-gnu /workspace/scratch/f48f7b33f935/compiler-arrow/gcc/xgcc -B/workspace/scratch/f48f7b33f935/compiler-arrow/gcc/ -std=c11 -Wall -Wextra -Werror -fsyntax-only /workspace/scratch/de9e8fcd5e57/fastchat-disk/qualification/android-application-boundary/availability-probe.c
+
+env LD_LIBRARY_PATH=/workspace/scratch/9a823f093abb/deps/usr/lib/x86_64-linux-gnu /workspace/scratch/f48f7b33f935/compiler-arrow/gcc/xgcc -B/workspace/scratch/f48f7b33f935/compiler-arrow/gcc/ -std=c11 -D__ANDROID__ -D__ANDROID_API__=24 -isystem /workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include -isystem /workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android -fsyntax-only /workspace/scratch/de9e8fcd5e57/fastchat-disk/qualification/android-application-boundary/application-probe.c
+
+git -C /workspace/scratch/f48f7b33f935/ick-assignment diff --exit-code 2a27ad6ab4e4601c9a0e4a5fa7915712db707af0 326366fffbbcaa8b23fa0abe4f58d1c2b3c07420 -- ick .gitmodules
