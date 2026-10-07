@@ -63,7 +63,7 @@ Result policy_load_source(const void *bytes, size_t length) {
     if (!lua_isboolean(runtime.state, -1)) return reject_policy();
     runtime.follows_prefixes ← lua_toboolean(runtime.state, -1);
     lua_pop(runtime.state, 1);
-    static const char *functions[] ← { "composer_action", "barrier_due", "fixture_frame" };
+    static const char *functions[] ← { "composer_action", "barrier_due", "fixture_scenario", "fixture_frame" };
     for (size_t index ← 0; index < sizeof(functions)/sizeof(functions[0]); index ← index + 1) {
         lua_getfield(runtime.state, -1, functions[index]);
         int callable ← lua_isfunction(runtime.state, -1);
@@ -115,10 +115,21 @@ Result policy_barrier_due(Phase phase, uint64_t elapsed_ns, uint64_t pending_byt
     lua_settop(runtime.state, 0);
     return FC_OK;
 }
-Result policy_fixture_frame(unsigned step, int long_response, FixturePlan *plan) {
+Result policy_fixture_scenario(const char *prompt, size_t length, int retrying, FixtureScenario *scenario) {
+    if (length > FC_PROMPT_BYTES || begin_policy_call("fixture_scenario") != FC_OK) return FC_POLICY_ERROR;
+    lua_pushlstring(runtime.state, prompt, length);
+    lua_pushboolean(runtime.state, retrying);
+    if (lua_pcall(runtime.state, 2, 1, 0) != LUA_OK || !lua_isinteger(runtime.state, -1)) return reject_policy();
+    lua_Integer choice ← lua_tointeger(runtime.state, -1);
+    if (choice < FIXTURE_SHORT || choice > FIXTURE_FAILED) return reject_policy();
+    *scenario ← (FixtureScenario)choice;
+    lua_settop(runtime.state, 0);
+    return FC_OK;
+}
+Result policy_fixture_frame(unsigned step, FixtureScenario scenario, FixturePlan *plan) {
     if (begin_policy_call("fixture_frame") != FC_OK) return FC_POLICY_ERROR;
     lua_pushinteger(runtime.state, step);
-    lua_pushboolean(runtime.state, long_response);
+    lua_pushinteger(runtime.state, scenario);
     if (lua_pcall(runtime.state, 2, 3, 0) != LUA_OK ||
         lua_type(runtime.state, -3) != LUA_TSTRING ||
         lua_type(runtime.state, -2) != LUA_TSTRING ||

@@ -16,7 +16,9 @@ The siblings differ only in follows_stored_prefixes (and package/receipt identit
 
 The durable conversation/store, lifecycle admission, JSON/SSE framing, UTF-8 reader,
 JNI presentation, bounded fixture expansion and file mechanisms stay in Icky C.
-The Lua heap never receives response bytes. Icky C still uses real assignment
+The Lua heap never receives streamed response bytes or renderer windows. It
+receives bounded prompt/phase/timing metadata and holds constant fixture frames.
+Icky C still uses real assignment
 arrows and ordinary C pointer/dereference syntax. No glyph-to-stock-source layer
 or Clang C compiler is involved.
 
@@ -29,7 +31,7 @@ availability checker agree. NDK headers remain unchanged.
 The C bridge embeds the exact Lua UTF-8 bytes with assembler .incbin and loads
 text through the real parser. One VM uses a tracked allocator capped at 131072
 bytes and a 10000-instruction call limit. No standard libraries are opened.
-Observed healthy policy heap peak is 11714 bytes. Invalid syntax, an infinite
+Observed healthy policy heap peak is 12637 bytes. Invalid syntax, an infinite
 policy, an oversized allocation and invalid results fail closed; no fallback
 renderer policy is selected. Only explicit reinitialization recovers that VM.
 
@@ -57,6 +59,10 @@ Native production builds require clean tracked source and bind the source revisi
 Use the explicit stable signer profile in android/signing/README.md; versionCode 2
 updates the C checkpoint's versionCode 1 while preserving package data. The
 packager includes the Icky Lua MIT notice as an APK asset.
+
+Use :long for the 8 MiB paced response, :lost for explicit uncertain delivery,
+and :fail for explicit failure. Send retries an uncertain request with a fresh
+attempt; the loss fixture's retry completes. Ordinary text uses the short fixture.
 
 The maintained workflows check the shared ai-ci build-toolchain contract and
 compile exact FastChat heads. Android production reuses the qualified ARM compiler
@@ -94,4 +100,3 @@ uncertainty, and long-response RSS/CPU/visible-answer timings on MIRO A1.
 plain text, uses bounded paging for the latest turn, and has no older-turn navigator.
 The provider is deterministic; live-provider adaptation and credentials are not
 storage-correctness prerequisites. No experiment or compiler draft is merged.
-

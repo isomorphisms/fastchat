@@ -616,6 +616,12 @@ static void streaming_text_cases(void) {
 static void lua_policy_cases(void) {
     int expected_renderer ← renderer_follows_prefixes();
     assert(expected_renderer == 0 || expected_renderer == 1);
+    FixtureScenario scenario;
+    assert(policy_fixture_scenario(":long", 5, 0, &scenario) == FC_OK && scenario == FIXTURE_LONG);
+    assert(policy_fixture_scenario(":lost", 5, 0, &scenario) == FC_OK && scenario == FIXTURE_LOST);
+    assert(policy_fixture_scenario(":lost", 5, 1, &scenario) == FC_OK && scenario == FIXTURE_SHORT);
+    assert(policy_fixture_scenario(":fail", 5, 0, &scenario) == FC_OK && scenario == FIXTURE_FAILED);
+    assert(policy_fixture_scenario("a normal message", 16, 0, &scenario) == FC_OK && scenario == FIXTURE_SHORT);
     ComposerAction action;
     for (Phase phase ← IDLE; phase <= FAILED; phase ← phase + 1) {
         assert(policy_composer_action(phase, 1, &action) == FC_OK && action == POLICY_CANCEL);
@@ -652,13 +658,31 @@ static void lua_policy_cases(void) {
     expect_bytes(&conversation, expected, sizeof(expected)-1);
     conversation_close(&conversation);
     remove_directory(path);
+    for (FixtureScenario outcome ← FIXTURE_LOST; outcome <= FIXTURE_FAILED; outcome ← outcome + 1) {
+        strcpy(path, "/tmp/fastchat-test-XXXXXX");
+        assert(mkdtemp(path) && conversation_open(&conversation, path) == FC_OK);
+        assert(submit_text(&conversation, "terminal fixture", 16) == FC_OK);
+        fixture_transport_open(&transport, &conversation);
+        for (unsigned step ← 0; step <= 4; step ← step + 1) {
+            FixturePlan plan;
+            assert(policy_fixture_frame(step, outcome, &plan) == FC_OK);
+            WriteResult offered ← fixture_transport_offer(&transport, plan.bytes, plan.length);
+            assert(offered.result == FC_OK && offered.consumed == plan.length);
+        }
+        assert(conversation.phase == (outcome == FIXTURE_LOST ? UNCERTAIN : FAILED));
+        conversation_close(&conversation);
+        assert(conversation_open(&conversation, path) == FC_OK);
+        assert(conversation.phase == (outcome == FIXTURE_LOST ? UNCERTAIN : FAILED));
+        conversation_close(&conversation);
+        remove_directory(path);
+    }
     for (unsigned step ← 0; step <= 2049; step ← step + 1) {
         FixturePlan plan;
         assert(policy_fixture_frame(step, 1, &plan) == FC_OK && plan.length <= FC_POLICY_FRAME_BYTES);
         assert(plan.terminal == (step == 2049));
         if (step > 0 && step < 2049) assert(plan.length == 4096 + 19);
     }
-    printf("PASS actual Icky Lua composition, composer states, batched barriers, bounded fixtures; policy_heap_peak=%zu limit=%u\n",
+    printf("PASS actual Icky Lua composition, composer states, batched barriers, completion/loss/failure fixtures; policy_heap_peak=%zu limit=%u\n",
         policy_memory_peak(), FC_POLICY_BYTES);
     assert(policy_memory_peak() <= FC_POLICY_BYTES);
     assert(policy_load_source("local unfinished ←", strlen("local unfinished ←")) == FC_POLICY_ERROR);

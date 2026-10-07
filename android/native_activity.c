@@ -29,7 +29,8 @@ typedef struct {
     jobject composer;
     Conversation conversation;
     FixtureTransport transport;
-    int timer, running, cancel, failure, long_response;
+    int timer, running, cancel, failure;
+    FixtureScenario fixture_scenario;
     unsigned fixture_step;
     size_t wire_offset, page_count;
     uint64_t previous_pages[64], began_ns;
@@ -250,7 +251,7 @@ static void create_composer(Presentation *presentation) {
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setTextSize", "(F)V"), 18.0);
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setTextColor", "(I)V"), (jint)0xff24282b);
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setBackgroundColor", "(I)V"), (jint)0xffe4e6df);
-    jstring hint ← (*environment)->NewStringUTF(environment, "Message (local fake provider)");
+    jstring hint ← (*environment)->NewStringUTF(environment, "Message (:long, :lost, :fail fixtures)");
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setHint", "(Ljava/lang/CharSequence;)V"), hint);
     jclass layout_type ← (*environment)->FindClass(environment, "android/widget/FrameLayout$LayoutParams");
     jobject layout ← (*environment)->NewObject(environment, layout_type,
@@ -327,7 +328,13 @@ static void send_or_cancel(Presentation *presentation) {
         presentation->page_count ← 0;
         presentation->began_ns ← monotonic_ns();
         presentation->generation_cpu_ns ← process_cpu_ns();
-        presentation->long_response ← strcmp(presentation->conversation.prompt, ":long") == 0;
+        if (policy_fixture_scenario(presentation->conversation.prompt, presentation->conversation.prompt_length,
+                action == POLICY_RETRY, &presentation->fixture_scenario) != FC_OK) {
+            admit_event(&presentation->conversation, presentation->conversation.request, presentation->conversation.attempt, TRANSPORT_LOSS);
+            presentation->failure ← 1;
+            report_problem(presentation, "Policy unavailable: request outcome uncertain");
+            return;
+        }
         presentation->cancel ← 0;
         presentation->running ← 1;
         presentation->message[0] ← 0;
@@ -383,7 +390,7 @@ static int on_tick(int descriptor, int events, void *context) {
         presentation->running ← 0;
     } else {
         FixturePlan plan;
-        result ← policy_fixture_frame(presentation->fixture_step, presentation->long_response, &plan);
+        result ← policy_fixture_frame(presentation->fixture_step, presentation->fixture_scenario, &plan);
         if (result != FC_OK) {
             presentation->running ← 0;
             fixture_transport_lost(&presentation->transport);
