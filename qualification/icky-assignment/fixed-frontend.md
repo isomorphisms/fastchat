@@ -27,3 +27,8 @@ revision. ICK main has not been merged or relabelled. Both FastChat experiments
 remain unimplemented and unmerged. The full C pass, storage/fault/replay tests,
 Lua second pass, RAM comparison, ARM32/Bionic/native packaging and physical A1
 acceptance remain required. Physical MIRO A1: **BLOCKED/NOT_RUN**.
+
+The later [application-boundary retry](../android-application-boundary/README.md)
+reruns the passing arrow probe, executes an Icky C host-file witness, and
+records the next failures against real NDK r29 declarations. The current
+application blocker is Bionic/Android frontend support, rather than `←`.
