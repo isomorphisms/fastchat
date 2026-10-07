@@ -1,0 +1,2 @@
+submitted=True,True completed=True,True diagnostics=0 retry_admission=True live_loss_retry=True
+PASS FastChat core with real HTTP transport

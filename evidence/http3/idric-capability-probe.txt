@@ -1,0 +1,9 @@
+Error: Module Network.HTTP3 not found
+
+NativeQuicTransportAttempt:4:1--4:21
+ 1 | module NativeQuicTransportAttempt
+ 2 |
+ 3 | import FastChatCore
+ 4 | import Network.HTTP3
+     ^^^^^^^^^^^^^^^^^^^^
+
