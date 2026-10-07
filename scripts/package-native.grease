@@ -10,6 +10,7 @@ var repository = $(realpath "$directory/..")
 var packaging = ARGV[0]
 var native = ARGV[1]
 var output = ARGV[2]
+export ANDROID_ASSET_DIR = "$repository/third-party"
 test -f "$packaging/apk/build-nativeactivity-apk.sh"
 # The maintained foreign packager is Bash source (not executable in its tree).
 bash "$packaging/apk/build-nativeactivity-apk.sh" "$repository/android/AndroidManifest.xml" "$native" armeabi-v7a "$output"

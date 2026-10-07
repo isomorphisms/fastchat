@@ -22,6 +22,13 @@ jobs:
           path: compiler
           submodules: true
           persist-credentials: false
+      - name: Pinned Icky Lua runtime
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: isomorphisms/lua
+          ref: 87306483cec50f8c750a22dda1d0742246fad756
+          path: icky-lua
+          persist-credentials: false
       - name: Shared build-toolchain contract
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -69,18 +76,30 @@ jobs:
           -std=c11 -O2 contract/src/aici.c -o contract-check
       - name: Required shared toolchain contract
         run: ./contract-check verify contract/contracts/build-toolchain-v0.contract.tsv .
+      - name: Compile actual Icky Lua runtime through ICK
+        run: >
+          compiler/build/gcc/xgcc -Bcompiler/build/gcc/
+          -B/usr/lib/gcc/x86_64-linux-gnu/13/
+          -isystem /usr/lib/gcc/x86_64-linux-gnu/13/include
+          -std=c11 -O2 -DMAKE_LIB -DLUA_USE_POSIX
+          -ffunction-sections -fdata-sections -Iicky-lua
+          -c icky-lua/onelua.c -o icky-lua.o
       - name: Compile actual arrow C
         run: >
           compiler/build/gcc/xgcc -Bcompiler/build/gcc/
           -B/usr/lib/gcc/x86_64-linux-gnu/13/
           -isystem /usr/lib/gcc/x86_64-linux-gnu/13/include
           -std=c11 -D_FILE_OFFSET_BITS=64 -O2 -Wall -Wextra -Werror
-          -Isrc src/conversation.c src/render_policy.c src/fixture_transport.c
-          tests/conversation.c -o core-tests
+          -Isrc -Iicky-lua -DFC_POLICY_SOURCE='"policy/composition.lua"'
+          -ffunction-sections -fdata-sections
+          src/conversation.c src/render_policy.c src/fixture_transport.c
+          tests/conversation.c icky-lua.o -Wl,--gc-sections -lm -ldl -o core-tests
       - name: Deterministic fault, transport and replay suite
         run: ./core-tests
       - name: Branch measurement
         run: ./core-tests benchmark "$(cat ci/renderer-mode)" benchmark-store
+      - name: Fresh-process completed replay
+        run: ./core-tests replay benchmark-store
       - name: RAM control in separate process
         run: ./core-tests benchmark ram unused
       - name: Canonical corpus
@@ -96,3 +115,4 @@ jobs:
             compiler/build/gcc/xgcc
             compiler/build/gcc/cc1
             compiler/build/gcc/collect2
+

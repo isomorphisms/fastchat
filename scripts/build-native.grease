@@ -1,14 +1,15 @@
 #!/usr/bin/env grease
 # Producer only. Compilation and platform linking are separate named stages.
 set -eu -o pipefail
-if (len(ARGV) !== 4) {
-  echo 'usage: build-native.grease ICK_ARM_DRIVER ICK_LIBEXEC NDK OUTPUT_DIRECTORY'
+if (len(ARGV) !== 5) {
+  echo 'usage: build-native.grease ICK_ARM_DRIVER ICK_LIBEXEC NDK ICKY_LUA_SOURCE OUTPUT_DIRECTORY'
   exit 2
 }
 var compiler = ARGV[0]
 var support = ARGV[1]
 var ndk = ARGV[2]
-var output = ARGV[3]
+var lua = ARGV[3]
+var output = ARGV[4]
 var directory = $(dirname "$0")
 var repository = $(realpath "$directory/..")
 var host = "$ndk/toolchains/llvm/prebuilt/linux-x86_64"
@@ -18,23 +19,31 @@ test "$machine" = arm-linux-gnueabi
 var identity = $("$compiler" --version)
 echo "$identity" | rg -q '\(GCC\)'
 var revision = $(git -C "$repository" rev-parse HEAD)
+git -C "$repository" diff --quiet HEAD -- src android policy
+var lua_revision = $(git -C "$lua" rev-parse HEAD)
+test "$lua_revision" = 87306483cec50f8c750a22dda1d0742246fad756
+git -C "$lua" diff --quiet HEAD -- '*.c' '*.h'
 mkdir -p "$output"
-var flags = ['-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', '-fPIC', '-fvisibility=hidden', '-D_FILE_OFFSET_BITS=64', '-D__ANDROID__', '-D__ANDROID_API__=26', '-DBIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD', '-marm', '-march=armv7-a', '-mfloat-abi=softfp', '-mfpu=vfpv3-d16']
+var flags = ['-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', '-fPIC', '-fvisibility=hidden', '-ffunction-sections', '-fdata-sections', '-D_FILE_OFFSET_BITS=64', '-D__ANDROID__', '-D__ANDROID_API__=26', '-D__ANDROID_MIN_SDK_VERSION__=26', '-DBIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD', '-marm', '-march=armv7-a', '-mfloat-abi=softfp', '-mfpu=vfpv3-d16']
 for source in (['conversation', 'render_policy', 'fixture_transport']) {
   "$compiler" "-B$support/" "--sysroot=$sysroot" -isystem "$sysroot/usr/include" \
-    -isystem "$sysroot/usr/include/arm-linux-androideabi" "-I$repository/src" @flags \
+    -isystem "$sysroot/usr/include/arm-linux-androideabi" "-I$repository/src" "-I$lua" \
+    "-DFC_POLICY_SOURCE=\"$repository/policy/composition.lua\"" @flags \
     -c "$repository/src/$source.c" -o "$output/$source.o"
 }
+"$compiler" "-B$support/" "--sysroot=$sysroot" -isystem "$sysroot/usr/include" \
+  -isystem "$sysroot/usr/include/arm-linux-androideabi" "-I$lua" @flags \
+  -DMAKE_LIB -DLUA_USE_POSIX -c "$lua/onelua.c" -o "$output/icky-lua.o"
 "$compiler" "-B$support/" "--sysroot=$sysroot" -isystem "$sysroot/usr/include" \
   -isystem "$sysroot/usr/include/arm-linux-androideabi" "-I$repository/src" @flags \
   "-DFC_SOURCE_REVISION=\"$revision\"" \
   -c "$repository/android/native_activity.c" -o "$output/native_activity.o"
 # ICK supplies every first-party C object. NDK supplies Bionic CRT, link editor,
 # platform stubs and the ARM helper runtime; there is no Clang C compilation.
-"$host/bin/ld.lld" -shared -soname libfastchat.so --no-undefined --hash-style=both \
+"$host/bin/ld.lld" -shared -soname libfastchat.so --no-undefined --hash-style=both --gc-sections \
   -z relro -z now -z max-page-size=4096 \
   "$sysroot/usr/lib/arm-linux-androideabi/26/crtbegin_so.o" \
-  "$output/conversation.o" "$output/render_policy.o" "$output/fixture_transport.o" "$output/native_activity.o" \
+  "$output/conversation.o" "$output/render_policy.o" "$output/fixture_transport.o" "$output/native_activity.o" "$output/icky-lua.o" \
   "-L$sysroot/usr/lib/arm-linux-androideabi/26" "-L$sysroot/usr/lib/arm-linux-androideabi" \
   -landroid -llog -lc -lm -ldl "$host/lib/clang/21/lib/linux/libclang_rt.builtins-arm-android.a" \
   "$sysroot/usr/lib/arm-linux-androideabi/26/crtend_so.o" -o "$output/libfastchat.debug.so"

@@ -382,6 +382,7 @@ static long image_peak_kib(void) {
     return peak;
 }
 static int benchmark_response(const char *mode, const char *path) {
+    assert(policy_open() == FC_OK); /* Same bounded runtime in the RAM control. */
     int ram ← strcmp(mode, "ram") == 0;
     int streaming ← strcmp(mode, "streaming") == 0;
     if (!ram && streaming != renderer_follows_prefixes()) {
@@ -484,6 +485,7 @@ static int fresh_process_replay(const char *path) {
 /* Keep these stores for byte-for-byte sibling comparison. All callers use
    the branch renderer policy; provider split sizes do not change history. */
 static int comparison_corpus(const char *root) {
+    assert(mkdir(root, 0700) == 0 || errno == EEXIST);
     static const char *frames[] ← {
         "data: [START]\n\ndata: [DONE]\n\n",
         "data: [START]\n\ndata: {\"text\":\"one chunk\"}\n\ndata: [DONE]\n\n",
@@ -611,12 +613,133 @@ static void streaming_text_cases(void) {
     puts("PASS streaming stored prefixes with incomplete UTF-8 withheld, tiny chunks, delimiters/fences preserved");
 }
 
+static void lua_policy_cases(void) {
+    int expected_renderer ← renderer_follows_prefixes();
+    assert(expected_renderer == 0 || expected_renderer == 1);
+    ComposerAction action;
+    for (Phase phase ← IDLE; phase <= FAILED; phase ← phase + 1) {
+        assert(policy_composer_action(phase, 1, &action) == FC_OK && action == POLICY_CANCEL);
+        assert(policy_composer_action(phase, 0, &action) == FC_OK);
+        assert(action == (phase == UNCERTAIN ? POLICY_RETRY :
+            phase == IDLE || phase == COMPLETED || phase == CANCELLED || phase == FAILED ? POLICY_SUBMIT : POLICY_WAIT));
+        int due;
+        assert(policy_barrier_due(phase, 199999999u, 1, &due) == FC_OK && !due);
+        assert(policy_barrier_due(phase, 200000000u, 1, &due) == FC_OK);
+        assert(due == (phase == GENERATING || phase == CANCEL_PENDING));
+        assert(policy_barrier_due(phase, UINT64_MAX, 0, &due) == FC_OK && !due);
+    }
+    Conversation conversation;
+    char path[64];
+    strcpy(path, "/tmp/fastchat-test-XXXXXX");
+    assert(mkdtemp(path) && conversation_open(&conversation, path) == FC_OK);
+    assert(submit_text(&conversation, "Lua fixture", 11) == FC_OK);
+    FixtureTransport transport;
+    fixture_transport_open(&transport, &conversation);
+    for (unsigned step ← 0; step <= 4; step ← step + 1) {
+        FixturePlan plan;
+        assert(policy_fixture_frame(step, 0, &plan) == FC_OK && plan.terminal == (step == 4));
+        /* Each actual policy frame is deliberately split to one-byte offers. */
+        for (size_t position ← 0; position < plan.length; position ← position + 1) {
+            WriteResult offered ← fixture_transport_offer(&transport, plan.bytes + position, 1);
+            assert(offered.result == FC_OK && offered.consumed == 1);
+        }
+    }
+    static const unsigned char expected[] ←
+        "A local response, stored before presentation.\n\n"
+        "UTF-8: \xe2\x82\xac \xf0\x9f\x99\x82. Markdown is plain readable text:\n"
+        "**disk authority**\n```text\nbounded windows\n```\n";
+    assert(conversation.phase == COMPLETED);
+    expect_bytes(&conversation, expected, sizeof(expected)-1);
+    conversation_close(&conversation);
+    remove_directory(path);
+    for (unsigned step ← 0; step <= 2049; step ← step + 1) {
+        FixturePlan plan;
+        assert(policy_fixture_frame(step, 1, &plan) == FC_OK && plan.length <= FC_POLICY_FRAME_BYTES);
+        assert(plan.terminal == (step == 2049));
+        if (step > 0 && step < 2049) assert(plan.length == 4096 + 19);
+    }
+    printf("PASS actual Icky Lua composition, composer states, batched barriers, bounded fixtures; policy_heap_peak=%zu limit=%u\n",
+        policy_memory_peak(), FC_POLICY_BYTES);
+    assert(policy_memory_peak() <= FC_POLICY_BYTES);
+    assert(policy_load_source("local unfinished ←", strlen("local unfinished ←")) == FC_POLICY_ERROR);
+    assert(renderer_follows_prefixes() == -1); /* no automatic fallback */
+    policy_close();
+    assert(policy_open() == FC_OK && renderer_follows_prefixes() == expected_renderer);
+    const char *loop ← "while true do end";
+    assert(policy_load_source(loop, strlen(loop)) == FC_POLICY_ERROR);
+    policy_close();
+    unsigned char oversized[FC_POLICY_BYTES];
+    memset(oversized, 'a', sizeof(oversized));
+    memcpy(oversized, "return \"", 8);
+    oversized[sizeof(oversized)-1] ← '"';
+    assert(policy_load_source(oversized, sizeof(oversized)) == FC_POLICY_ERROR);
+    assert(policy_memory_denials() && policy_memory_peak() <= FC_POLICY_BYTES);
+    policy_close();
+    assert(policy_open() == FC_OK && renderer_follows_prefixes() == expected_renderer);
+    FixturePlan invalid;
+    assert(policy_fixture_frame(2050, 1, &invalid) == FC_POLICY_ERROR);
+    assert(renderer_follows_prefixes() == -1);
+    policy_close();
+    assert(policy_open() == FC_OK && renderer_follows_prefixes() == expected_renderer);
+    puts("PASS malformed policy, instruction/heap bounds and invalid result fail closed; explicit reinitialization");
+}
+
+static void giant_framed_offer_case(void) {
+    Conversation conversation;
+    char path[64];
+    strcpy(path, "/tmp/fastchat-test-XXXXXX");
+    assert(mkdtemp(path) && conversation_open(&conversation, path) == FC_OK);
+    assert(submit_text(&conversation, "giant wire offer", 16) == FC_OK);
+    FixtureTransport transport;
+    fixture_transport_open(&transport, &conversation);
+    /* Provider-owned test input. The adapter never copies this entire offer. */
+    size_t capacity ← 256 * (4096 + 19) + 64;
+    unsigned char *wire ← malloc(capacity);
+    assert(wire);
+    size_t length ← 0;
+    for (unsigned step ← 0; step <= 257; step ← step + 1) {
+        FixturePlan plan;
+        assert(policy_fixture_frame(step == 257 ? 2049 : step, 1, &plan) == FC_OK);
+        assert(plan.length <= capacity - length);
+        memcpy(wire + length, plan.bytes, plan.length);
+        length ← length + plan.length;
+    }
+    WriteResult offered ← fixture_transport_offer(&transport, wire, length);
+    assert(offered.result == FC_OK && offered.consumed == length && conversation.phase == COMPLETED);
+    assert(conversation.extents.committed == 256 * FC_WRITE_BYTES);
+    assert(transport.maximum_buffered <= 2 * FC_FRAME_BYTES);
+    printf("PASS giant framed input offer=%zu logical_bytes=%llu active_framing_peak=%zu fixed_framing_capacity=%u renderer_queue_bytes=0\n",
+        length, (unsigned long long)conversation.extents.committed, transport.maximum_buffered, 2 * FC_FRAME_BYTES);
+    unsigned char window[FC_VIEW_BYTES];
+    uint64_t offset ← 0;
+    while (offset < conversation.extents.committed) {
+        size_t count;
+        assert(render_stored_window(&conversation, offset, window, sizeof(window), &count) == FC_OK && count);
+        for (size_t index ← 0; index < count; index ← index + 1) assert(window[index] == 'a');
+        offset ← offset + count;
+    }
+    free(wire);
+    conversation_close(&conversation);
+    remove_directory(path);
+    fresh_conversation(&conversation, path);
+    fixture_transport_open(&transport, &conversation);
+    unsigned char oversized[FC_FRAME_BYTES + 100];
+    memset(oversized, 'a', sizeof(oversized));
+    memcpy(oversized, "data: {\"text\":\"", 15);
+    assert(fixture_transport_offer(&transport, oversized, sizeof(oversized)).result == FC_INVALID_TEXT);
+    assert(conversation.extents.written == 0 && conversation.phase != COMPLETED);
+    conversation_close(&conversation);
+    remove_directory(path);
+}
+
 int main(int argc, char **argv) {
     if (argc == 3 && strcmp(argv[1], "replay") == 0) return fresh_process_replay(argv[2]);
     if (argc == 3 && strcmp(argv[1], "corpus") == 0) return comparison_corpus(argv[2]);
     if (argc == 4 && strcmp(argv[1], "benchmark") == 0)
         return benchmark_response(argv[2], argv[3]);
 
+    lua_policy_cases();
+    giant_framed_offer_case();
     prefix_visibility_case();
     response_cases();
     cancellation_cases();

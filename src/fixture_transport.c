@@ -85,6 +85,8 @@ static Result decode_text_frame(FixtureTransport *transport, const unsigned char
     if (position >= length || bytes[position] != '}') return FC_INVALID_TEXT;
     position ← position + 1;
     skip_space(bytes, length, &position);
+    size_t active ← length + transport->decoded_length;
+    if (active > transport->maximum_buffered) transport->maximum_buffered ← active;
     return position == length ? FC_OK : FC_INVALID_TEXT;
 }
 static Result flush_decoded(FixtureTransport *transport) {
