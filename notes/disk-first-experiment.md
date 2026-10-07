@@ -1,6 +1,6 @@
 # FC-D1 — disk-first comparison
 
-Status: **BLOCKED at the Icky C frontend prerequisite; not implemented**.
+Status: **assignment syntax passes on the pinned compiler fix; application not implemented**.
 
 Independent branch: `sun/disk-first-icky-c-lua`.
 Exact fetched main base: `b49f0f7083d2d034ba76b910a43592d6d07bd18b`.
@@ -40,13 +40,15 @@ and replay time. Values are **NOT_RUN**, not zero.
 
 ## First blocker and subsequent gates
 
-The required arrow probe fails with the owned ICK C frontend; the ordinary-C
-compiler control succeeds. [Exact receipt](../qualification/icky-assignment/README.md).
+The unchanged arrow probe now passes with the owned rebuilt ICK on its pinned
+fix branch. [Fixed frontend receipt](../qualification/icky-assignment/fixed-frontend.md).
+The original failure diagnostics remain in the historical receipt.
 
-After the arrow path exists: complete the C vertical slice and deterministic
+With the pinned arrow path: complete the C vertical slice and deterministic
 fault/replay tests; qualify ARM32/Bionic declarations and native platform linking;
 produce readable NativeActivity presentation and composer; only then perform
 the Icky Lua policy pass and repeat tests.
 
 A1 APK, signing/update identity, artifact digest, memory comparison and physical
 execution are **BLOCKED/NOT_RUN**. No compiler is to be installed on the phone.
+

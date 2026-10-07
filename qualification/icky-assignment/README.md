@@ -1,7 +1,9 @@
 # Icky C prerequisite receipt
 
-Status: **BLOCKED**. The FastChat application has not been implemented.
-This records the first prerequisite failure, not a successful vertical slice.
+Status: **historical failure, superseded on the pinned compiler fix branch**.
+The FastChat application has not been implemented. The unchanged probe now passes
+with the owned rebuilt ICK; see [fixed frontend receipt](fixed-frontend.md).
+The baseline diagnostics below are retained as historical evidence.
 
 ## Executed probe
 
@@ -58,8 +60,8 @@ Owned cc1 SHA-256:
   availability attributes with NDK r27c. That is prior evidence against its
   recorded compiler revision, not a new r29 or FastChat application result.
 
-The first blocker is assignment-arrow support in the selected ICK path. After
-that succeeds, the complete ARM32/Bionic compile and platform link still need
+The historical assignment-arrow blocker now passes on the pinned fix revision
+linked above. The complete ARM32/Bionic compile and platform link still need
 qualification. Do not erase attributes, pretend to be Clang, silently compile
 consumer code with another compiler, or invent a local regex translator.
 
@@ -86,3 +88,4 @@ Android NativeActivity/package boundary:
 
 The draft must remain unmerged and incomplete until these stages have real
 receipts. No implementation, packaged artifact or measurement is claimed.
+
