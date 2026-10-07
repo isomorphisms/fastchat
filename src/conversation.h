@@ -17,6 +17,7 @@ typedef struct {
 typedef struct {
     int directory, journal, response;
     uint64_t conversation, request, attempt, sequence, journal_end;
+    uint64_t response_base, arena_high_water, arena_capacity;
     uint32_t response_crc;
     Phase phase;
     Extents extents;
