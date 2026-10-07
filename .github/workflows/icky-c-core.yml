@@ -90,9 +90,10 @@ jobs:
           -B/usr/lib/gcc/x86_64-linux-gnu/13/
           -isystem /usr/lib/gcc/x86_64-linux-gnu/13/include
           -std=c11 -D_FILE_OFFSET_BITS=64 -O2 -Wall -Wextra -Werror
-          -Isrc -Iicky-lua -DFC_POLICY_SOURCE='"policy/composition.lua"'
+          -Isrc -Ithird-party/appendfat-arena -Iicky-lua -DFC_POLICY_SOURCE='"policy/composition.lua"'
           -ffunction-sections -fdata-sections
           src/conversation.c src/render_policy.c src/fixture_transport.c
+          third-party/appendfat-arena/appendfat_arena.c
           tests/conversation.c icky-lua.o -Wl,--gc-sections -lm -ldl -o core-tests
       - name: Deterministic fault, transport and replay suite
         run: ./core-tests
