@@ -240,7 +240,24 @@ static void interrupted_cases(void) {
     assert(conversation.extents.durable == 0 && conversation.extents.committed == 0);
     conversation_close(&conversation);
     remove_directory(path);
-    puts("PASS partial/short writes, exhaustion, failed barrier, interrupted replay, uncertainty, fresh retry, stale attempt");
+    fresh_conversation(&conversation, path);
+    conversation.would_block ← 1;
+    WriteResult blocked ← store_response_bytes(&conversation, conversation.request, conversation.attempt, "pending", 7);
+    assert(blocked.result == FC_BACKPRESSURE && blocked.consumed == 0);
+    assert(conversation.extents.received == 7 && conversation.extents.written == 0);
+    uint64_t before_complete ← conversation.sequence;
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, COMPLETE) == FC_REJECTED);
+    assert(conversation.sequence == before_complete && conversation.phase == GENERATING);
+    conversation.would_block ← 0;
+    feed_bytes(&conversation, (const unsigned char *)"pending", 7);
+    finish_conversation(&conversation);
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, path) == FC_OK && conversation.phase == COMPLETED);
+    assert(conversation.extents.received == 7 && conversation.extents.written == 7);
+    expect_bytes(&conversation, (const unsigned char *)"pending", 7);
+    conversation_close(&conversation);
+    remove_directory(path);
+    puts("PASS partial/short writes, exhaustion, failed barrier, interrupted replay, uncertainty, fresh retry, stale attempt, finish refuses unwritten received bytes");
 }
 static void process_death_case(void) {
     char path[] ← "/tmp/fastchat-death-XXXXXX";
