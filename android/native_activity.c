@@ -13,7 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/timerfd.h>
-#include <sys/resource.h>
 #include <time.h>
 #include <unistd.h>
 #ifndef FC_SOURCE_REVISION
@@ -35,7 +34,7 @@ typedef struct {
     size_t wire_offset, page_count;
     uint64_t previous_pages[64], began_ns;
     uint64_t created_ns, generation_cpu_ns;
-    uint64_t viewport, next_viewport, last_barrier_ns, terminal_ns, first_visible_ns;
+    uint64_t viewport, next_viewport, last_barrier_ns, terminal_ns, first_posted_ns;
     float density;
     int width, height, content_bottom;
     char message[160];
@@ -51,9 +50,19 @@ static uint64_t process_cpu_ns(void) {
     clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &time);
     return (uint64_t)time.tv_sec * 1000000000u + (uint64_t)time.tv_nsec;
 }
+static long process_peak_rss_kib(void) {
+    FILE *status ← fopen("/proc/self/status", "r");
+    if (!status) return -1;
+    char line[128];
+    long peak ← -1;
+    while (fgets(line, sizeof(line), status)) {
+        if (sscanf(line, "VmHWM: %ld kB", &peak) == 1) break;
+    }
+    fclose(status);
+    return peak;
+}
 static void log_measurements(Presentation *presentation) {
-    struct rusage usage;
-    long peak ← getrusage(RUSAGE_SELF, &usage) == 0 ? usage.ru_maxrss : -1;
+    long peak ← process_peak_rss_kib();
     FILE *status ← fopen("/proc/self/statm", "r");
     unsigned long pages, resident;
     long steady ← -1;
@@ -68,6 +77,7 @@ static void log_measurements(Presentation *presentation) {
         (unsigned long long)measurements->data_bytes, (unsigned long long)measurements->journal_bytes,
         (unsigned long long)measurements->write_count, measurements->maximum_write, measurements->maximum_view,
         presentation->transport.maximum_buffered, (unsigned long long)(process_cpu_ns() - presentation->generation_cpu_ns));
+    __android_log_print(ANDROID_LOG_INFO, "FastChat", "policy_heap_peak=%zu policy_heap_limit=%u", policy_memory_peak(), FC_POLICY_BYTES);
 }
 static void report_problem(Presentation *presentation, const char *message) {
     snprintf(presentation->message, sizeof(presentation->message), "%s", message);
@@ -186,17 +196,14 @@ static void present_stored_response(Presentation *presentation) {
     }
     unsigned char bytes[FC_VIEW_BYTES];
     size_t length;
+    int posted_text ← 0;
     Result read ← render_stored_window(&presentation->conversation, presentation->viewport, bytes, sizeof(bytes), &length);
     if (read != FC_OK) report_problem(presentation, "Stored text cannot be displayed");
     else if (length) {
         size_t displayed ← draw_bytes(environment, canvas, paint, bytes, length, 16*density, &y,
                                       24*density, columns, bottom - 112*density);
         presentation->next_viewport ← presentation->viewport + displayed;
-        if (displayed && !presentation->first_visible_ns) {
-            presentation->first_visible_ns ← monotonic_ns();
-            if (presentation->began_ns) __android_log_print(ANDROID_LOG_INFO, "FastChat", "first_visible_ns=%llu",
-                (unsigned long long)(presentation->first_visible_ns - presentation->began_ns));
-        }
+        posted_text ← displayed > 0;
     } else {
         presentation->next_viewport ← presentation->viewport;
         draw_label(environment, canvas, paint, presentation->conversation.phase == UNCERTAIN
@@ -209,8 +216,15 @@ static void present_stored_response(Presentation *presentation) {
                presentation->width - 88*density, bottom - 26*density, 19*density);
     (*environment)->CallVoidMethod(environment, surface,
         method(environment, surface, "unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V"), canvas);
-    if (!clear_java_failure(presentation, environment) && presentation->terminal_ns) {
-        __android_log_print(ANDROID_LOG_INFO, "FastChat", "final_render_ns=%llu request=%llu attempt=%llu",
+    int posted ← !clear_java_failure(presentation, environment);
+    /* Posting a buffer is an observable proxy, not a physical visible frame. */
+    if (posted && posted_text && !presentation->first_posted_ns) {
+        presentation->first_posted_ns ← monotonic_ns();
+        if (presentation->began_ns) __android_log_print(ANDROID_LOG_INFO, "FastChat", "first_posted_ns=%llu",
+            (unsigned long long)(presentation->first_posted_ns - presentation->began_ns));
+    }
+    if (posted && presentation->terminal_ns && presentation->conversation.phase == COMPLETED) {
+        __android_log_print(ANDROID_LOG_INFO, "FastChat", "terminal_to_completed_post_ns=%llu request=%llu attempt=%llu",
             (unsigned long long)(monotonic_ns() - presentation->terminal_ns),
             (unsigned long long)presentation->conversation.request, (unsigned long long)presentation->conversation.attempt);
         presentation->terminal_ns ← 0;
@@ -252,7 +266,6 @@ static void create_composer(Presentation *presentation) {
     (*environment)->PopLocalFrame(environment, NULL);
 }
 static Result submit_composer(Presentation *presentation) {
-    if (presentation->conversation.phase == UNCERTAIN) return retry_request(&presentation->conversation);
     if (!presentation->composer) return FC_REJECTED;
     JNIEnv *environment ← presentation->activity->env;
     jobject editable ← (*environment)->CallObjectMethod(environment, presentation->composer,
@@ -295,12 +308,20 @@ static Result submit_composer(Presentation *presentation) {
 }
 static void send_or_cancel(Presentation *presentation) {
     if (presentation->failure || presentation->timer < 0) return;
-    if (presentation->running) {
+    ComposerAction action;
+    if (policy_composer_action(presentation->conversation.phase, presentation->running, &action) != FC_OK) {
+        presentation->failure ← 1;
+        report_problem(presentation, "Policy unavailable: submission disabled");
+        return;
+    }
+    if (action == POLICY_CANCEL) {
         if (admit_event(&presentation->conversation, presentation->conversation.request,
                          presentation->conversation.attempt, CANCEL_REQUEST) == FC_OK) presentation->cancel ← 1;
-    } else if (submit_composer(presentation) == FC_OK) {
+    } else if ((action == POLICY_RETRY ? retry_request(&presentation->conversation) :
+                action == POLICY_SUBMIT ? submit_composer(presentation) : FC_REJECTED) == FC_OK) {
         presentation->viewport ← 0;
-        presentation->first_visible_ns ← 0;
+        presentation->first_posted_ns ← 0;
+        presentation->terminal_ns ← 0;
         presentation->fixture_step ← 0;
         presentation->wire_offset ← 0;
         presentation->page_count ← 0;
@@ -361,36 +382,30 @@ static int on_tick(int descriptor, int events, void *context) {
         result ← admit_event(&presentation->conversation, presentation->conversation.request, presentation->conversation.attempt, CANCEL_ACK);
         presentation->running ← 0;
     } else {
-        static const char *frames[] ← {
-            "data: [START]\n\n",
-            "data: {\"text\":\"A local response, stored before presentation.\\n\\n\"}\n\n",
-            "data: {\"text\":\"UTF-8: \\u20ac \\ud83d\\ude42. Markdown is plain readable text:\\n\"}\n\n",
-            "data: {\"text\":\"**disk authority**\\n```text\\nbounded windows\\n```\\n\"}\n\n",
-            "data: [DONE]\n\n"
-        };
-        char long_frame[FC_FRAME_BYTES];
-        unsigned terminal_step ← presentation->long_response ? 2049 : 4;
-        const char *frame;
-        if (presentation->long_response && presentation->fixture_step > 0 && presentation->fixture_step < terminal_step) {
-            static const char prefix[] ← "data: {\"text\":\"";
-            memcpy(long_frame, prefix, sizeof(prefix)-1);
-            memset(long_frame+sizeof(prefix)-1, 'a', 4096);
-            strcpy(long_frame+sizeof(prefix)-1+4096, "\"}\n\n");
-            frame ← long_frame;
-        } else frame ← presentation->fixture_step == terminal_step ? frames[4] : frames[presentation->fixture_step];
-        if (presentation->fixture_step == terminal_step && !presentation->wire_offset) presentation->terminal_ns ← monotonic_ns();
-        WriteResult offered ← fixture_transport_offer(&presentation->transport, frame + presentation->wire_offset,
-                                                       strlen(frame) - presentation->wire_offset);
+        FixturePlan plan;
+        result ← policy_fixture_frame(presentation->fixture_step, presentation->long_response, &plan);
+        if (result != FC_OK) {
+            presentation->running ← 0;
+            fixture_transport_lost(&presentation->transport);
+            report_problem(presentation, "Policy stopped; request is not completed");
+            return 1;
+        }
+        if (plan.terminal && !presentation->wire_offset) presentation->terminal_ns ← monotonic_ns();
+        WriteResult offered ← fixture_transport_offer(&presentation->transport, plan.bytes + presentation->wire_offset,
+                                                       plan.length - presentation->wire_offset);
         presentation->wire_offset ← presentation->wire_offset + offered.consumed;
         result ← offered.result;
         if (result == FC_BACKPRESSURE) { present_stored_response(presentation); return 1; }
-        if (presentation->wire_offset != strlen(frame) && result == FC_OK) result ← FC_STORAGE_ERROR;
+        if (presentation->wire_offset != plan.length && result == FC_OK) result ← FC_STORAGE_ERROR;
         if (result == FC_OK) { presentation->fixture_step ← presentation->fixture_step + 1; presentation->wire_offset ← 0; }
-        if (presentation->fixture_step == terminal_step + 1) presentation->running ← 0;
+        if (plan.terminal && result == FC_OK) presentation->running ← 0;
         if (presentation->fixture_step % 128 == 0) log_measurements(presentation);
     }
     uint64_t now ← monotonic_ns();
-    if (result == FC_OK && presentation->conversation.phase == GENERATING && now - presentation->last_barrier_ns >= 200000000u) {
+    int barrier ← 0;
+    if (result == FC_OK) result ← policy_barrier_due(presentation->conversation.phase, now - presentation->last_barrier_ns,
+        presentation->conversation.extents.written - presentation->conversation.extents.committed, &barrier);
+    if (result == FC_OK && barrier) {
         result ← commit_stored_prefix(&presentation->conversation);
         presentation->last_barrier_ns ← now;
     }
@@ -437,6 +452,7 @@ static void destroyed(ANativeActivity *activity) {
     if (presentation->composer) (*activity->env)->DeleteGlobalRef(activity->env, presentation->composer);
     if (presentation->window) ANativeWindow_release(presentation->window);
     conversation_close(&presentation->conversation);
+    policy_close();
     free(presentation);
     activity->instance ← NULL;
 }
@@ -448,6 +464,8 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t sav
     presentation->activity ← activity;
     presentation->timer ← -1;
     presentation->density ← 1;
+    presentation->conversation.journal ← -1;
+    presentation->conversation.response ← -1;
     presentation->created_ns ← monotonic_ns();
     activity->instance ← presentation;
     activity->callbacks->onDestroy ← destroyed;
@@ -460,7 +478,7 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t sav
     activity->callbacks->onInputQueueDestroyed ← input_destroyed;
     char path[4096];
     int count ← snprintf(path, sizeof(path), "%s/conversation", activity->internalDataPath);
-    if (count < 0 || (size_t)count >= sizeof(path) || conversation_open(&presentation->conversation, path) != FC_OK) {
+    if (count < 0 || (size_t)count >= sizeof(path) || conversation_open(&presentation->conversation, path) != FC_OK || policy_open() != FC_OK) {
         presentation->failure ← 1;
         report_problem(presentation, "Store unavailable: submission disabled");
     }

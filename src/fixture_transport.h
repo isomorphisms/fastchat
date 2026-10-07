@@ -1,7 +1,7 @@
 #ifndef FASTCHAT_FIXTURE_TRANSPORT_H
 #define FASTCHAT_FIXTURE_TRANSPORT_H
 #include "conversation.h"
-enum { FC_FRAME_BYTES = 8192 };
+enum { FC_FRAME_BYTES ← 8192 };
 /* A bounded fake SSE/JSON adapter, deliberately separate from admission and
    from the eventual provider adapter.  Input offers may have any byte size. */
 typedef struct {

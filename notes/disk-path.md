@@ -1,10 +1,11 @@
 # Disk-authoritative comparison
 
 These experiments share a conversation core, file store, fixture protocol and
-Canvas/Paint renderer. FC-D1 reads a response only after its completion record;
+Canvas/Paint renderer. The working C checkpoint is followed by the actual
+[Icky Lua composition pass](icky-lua-pass.md). FC-D1 reads a response only after its completion record;
 FC-S1 also reads admitted stored prefixes. Main was fetched at
 `b49f0f7083d2d034ba76b910a43592d6d07bd18b`. Neither experiment depends on merging
-the other or the [Idriç semantic experiment](https://github.com/isomorphisms/fastchat/pull/4)
+the other or [isomorphisms/fastchat PR #4, “Implement executable Idriç conversation core”](https://github.com/isomorphisms/fastchat/pull/4)
 at `c66021957fb5dc195a995b2c0cd212863ff68915`.
 
 ## Ordering and visibility
