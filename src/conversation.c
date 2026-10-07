@@ -144,7 +144,7 @@ static Result publish_record(Conversation *conversation, Event event, uint64_t r
     unsigned char record[RECORD_BYTES];
     memset(record, 0, RECORD_HEADER);
     size_t length ← RECORD_HEADER + prompt_length;
-    memcpy(record, "FC01", 4);
+    memcpy(record, "FC02", 4);
     encode_number(record + 4, length, 4);
     encode_number(record + 8, conversation->sequence + 1, 8);
     encode_number(record + 16, request, 8);
@@ -254,7 +254,7 @@ static Result replay_journal(Conversation *conversation) {
         if (remaining < RECORD_HEADER) break;
         if (!read_exact(conversation->journal, record, RECORD_HEADER, conversation->journal_end)) return FC_CORRUPT;
         size_t length ← (size_t)decode_number(record + 4, 4);
-        if (memcmp(record, "FC01", 4) || length < RECORD_HEADER || length > RECORD_BYTES) return FC_CORRUPT;
+        if (memcmp(record, "FC02", 4) || length < RECORD_HEADER || length > RECORD_BYTES) return FC_CORRUPT;
         if (remaining < length) break;
         if (!read_exact(conversation->journal, record, length, conversation->journal_end)) return FC_CORRUPT;
         uint32_t expected ← (uint32_t)decode_number(record + 60, 4);
