@@ -4,7 +4,7 @@ PASS giant framed input offer=1053469 logical_bytes=1048576 active_framing_peak=
 PASS branch renderer policy, committed prefixes, UTF-8 visibility eligibility
 PASS empty, one/many chunks, every UTF-8 cut, disk-first visibility, duplicate terminal, completed replay
 PASS pending cancellation, chunks after cancel request, both terminal race orders, explicit failure
-PASS partial/short writes, exhaustion, failed barrier, interrupted replay, uncertainty, fresh retry, stale attempt
+PASS partial/short writes, exhaustion, failed barrier, interrupted replay, uncertainty, fresh retry, stale attempt, finish refuses unwritten received bytes
 PASS process death: committed prefix recoverable, uncommitted tail not completed
 PASS torn journal tail, interrupted terminal record, complete-record corruption rejected
 PASS explicit backpressure, giant offered chunk, bounded writes/view, slow renderer retains no queue

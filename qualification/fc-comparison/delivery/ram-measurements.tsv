@@ -1,2 +1,2 @@
 mode	peak_rss_kib	steady_rss_kib	response_bytes	data_bytes	journal_bytes	writes	max_write	max_view	first_text_ms	terminal_first_window_ms	terminal_drain_ms	generation_cpu_ms	replay_ms	response_crc
-ram	9304	9256	8388608	0	0	0	0	4096	3.437	0.001	90.249	3.351	NOT_APPLICABLE	31e202a1
+ram	9304	9256	8388608	0	0	0	0	4096	3.702	0.000	86.225	3.636	NOT_APPLICABLE	31e202a1

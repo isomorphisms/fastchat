@@ -20,6 +20,9 @@ empty_keepalive	no spurious response bytes or terminal completion	PASS	BLOCKED/N
 slow_renderer	bounded viewport and store cursor; no full-answer private copy	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
 slow_store	producer throttled; no silent drops or unbounded queue	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
 completion_cancel_race	deterministic first admitted terminal wins in both orderings	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+completion_with_unwritten_offer	completion rejected until entire offered slice is written	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+replay_received_lower_bound	received/written/durable restored at committed extent; uncommitted progress unknown	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
+policy_limits	actual Icky Lua heap/instruction/result bounds fail closed	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
 torn_commit_record	replay rejects incomplete record; no invented completion	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
 durability_batch	written and durable extents distinguishable before barrier	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
 storage_exhaustion	no acknowledged durable event after failed write/barrier	PASS	BLOCKED/NOT_RUN	fc-comparison/delivery/disk-tests.txt; fc-comparison/delivery/streaming-tests.txt
