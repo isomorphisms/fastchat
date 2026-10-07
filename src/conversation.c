@@ -118,17 +118,16 @@ static int terminal_phase(Phase phase) {
     return phase == COMPLETED || phase == CANCELLED || phase == FAILED;
 }
 static int response_phase(const Conversation *conversation) {
-    return conversation->response_started
-        && (conversation->phase == GENERATING || conversation->phase == CANCEL_PENDING);
+    return conversation->phase == GENERATING || conversation->phase == CANCEL_PENDING;
 }
 static int event_is_admissible(const Conversation *conversation, Event event) {
     Phase phase ← conversation->phase;
     if (event == SUBMIT) return phase == IDLE || terminal_phase(phase);
     if (event == RETRY) return phase == UNCERTAIN;
-    if (event == START) return !conversation->response_started && (phase == SUBMITTED || phase == CANCEL_PENDING);
+    if (event == START) return phase == SUBMITTED || phase == CANCEL_PENDING;
     if (event == CANCEL_REQUEST) return phase == SUBMITTED || phase == GENERATING;
     if (event == TRANSPORT_LOSS || event == FAILURE) return phase == SUBMITTED || phase == CANCEL_PENDING || phase == GENERATING;
-    if (event == CANCEL_ACK) return phase == CANCEL_PENDING;
+    if (event == CANCEL_ACK) return phase == GENERATING || phase == CANCEL_PENDING;
     if (event == PREFIX || event == COMPLETE) return response_phase(conversation);
     return 0;
 }
@@ -356,6 +355,8 @@ WriteResult store_response_bytes(Conversation *conversation, uint64_t request, u
     while (total.consumed < length) {
         size_t amount ← length - total.consumed;
         if (amount > FC_WRITE_BYTES) amount ← FC_WRITE_BYTES;
+        size_t remaining_batch ← FC_BATCH_BYTES - (size_t)(conversation->extents.written - conversation->extents.committed);
+        if (amount > remaining_batch) amount ← remaining_batch;
         uint64_t end ← conversation->extents.written + amount;
         if (end > conversation->extents.capacity) {
             uint64_t capacity ← ((end + RESERVATION_BYTES - 1) / RESERVATION_BYTES) * RESERVATION_BYTES;

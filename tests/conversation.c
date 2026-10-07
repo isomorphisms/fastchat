@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "conversation.h"
+#include "render_policy.h"
 #include <assert.h>
 #include <dirent.h>
 #include <errno.h>
@@ -74,6 +75,36 @@ static void feed_bytes(Conversation *conversation, const unsigned char *bytes, s
     assert(written.result == FC_OK && written.consumed == length);
     assert(extents_are_ordered(conversation));
 }
+static void prefix_visibility_case(void) {
+    Conversation conversation;
+    char path[64];
+    fresh_conversation(&conversation, path);
+    unsigned char bytes[FC_BATCH_BYTES];
+    memset(bytes, 'a', sizeof(bytes));
+    bytes[FC_BATCH_BYTES - 1] ← 0xe2;
+    feed_bytes(&conversation, bytes, sizeof(bytes));
+    assert(conversation.extents.committed == FC_BATCH_BYTES);
+    unsigned char view[FC_VIEW_BYTES];
+    size_t length;
+    assert(render_stored_window(&conversation, 0, view, sizeof(view), &length) == FC_OK);
+    assert(length == (renderer_follows_prefixes() ? FC_VIEW_BYTES : 0));
+    assert(render_stored_window(&conversation, FC_BATCH_BYTES - 1, view, sizeof(view), &length) == FC_OK);
+    assert(length == 0);
+    static const unsigned char continuation[] ← { 0x82, 0xac };
+    feed_bytes(&conversation, continuation, sizeof(continuation));
+    /* Written UTF-8 continuation is ineligible until the next durable prefix. */
+    assert(render_stored_window(&conversation, FC_BATCH_BYTES - 1, view, sizeof(view), &length) == FC_OK);
+    assert(length == 0);
+    assert(commit_stored_prefix(&conversation) == FC_OK);
+    assert(render_stored_window(&conversation, FC_BATCH_BYTES - 1, view, sizeof(view), &length) == FC_OK);
+    assert(length == (renderer_follows_prefixes() ? 3u : 0u));
+    finish_conversation(&conversation);
+    assert(render_stored_window(&conversation, FC_BATCH_BYTES - 1, view, sizeof(view), &length) == FC_OK);
+    assert(length == 3 && memcmp(view, "\xe2\x82\xac", 3) == 0);
+    conversation_close(&conversation);
+    remove_directory(path);
+    puts("PASS branch renderer policy, committed prefixes, UTF-8 visibility eligibility");
+}
 static void response_cases(void) {
     static const unsigned char hostile[] ← "A\xe2\x82\xac\xf0\x9f\x99\x82\n";
     for (size_t length ← 0; length <= sizeof(hostile) - 1; length ← length + 1) {
@@ -112,6 +143,20 @@ static void response_cases(void) {
     puts("PASS empty, one/many chunks, every UTF-8 cut, disk-first visibility, duplicate terminal, completed replay");
 }
 static void cancellation_cases(void) {
+    Conversation pending;
+    char pending_path[] ← "/tmp/fastchat-cancel-XXXXXX";
+    assert(mkdtemp(pending_path));
+    assert(conversation_open(&pending, pending_path) == FC_OK);
+    assert(submit_text(&pending, "hello", 5) == FC_OK);
+    assert(admit_event(&pending, pending.request, pending.attempt, CANCEL_REQUEST) == FC_OK);
+    feed_bytes(&pending, (const unsigned char *)"pending", 7);
+    assert(admit_event(&pending, pending.request, pending.attempt, START) == FC_OK);
+    finish_conversation(&pending);
+    conversation_close(&pending);
+    assert(conversation_open(&pending, pending_path) == FC_OK && pending.phase == COMPLETED);
+    conversation_close(&pending);
+    remove_directory(pending_path);
+
     for (int cancellation_wins ← 0; cancellation_wins < 2; cancellation_wins ← cancellation_wins + 1) {
         Conversation conversation;
         char path[64];
@@ -397,6 +442,7 @@ int main(int argc, char **argv) {
     if (argc == 4 && strcmp(argv[1], "benchmark") == 0)
         return benchmark_response(argv[2], argv[3]);
 
+    prefix_visibility_case();
     response_cases();
     cancellation_cases();
     interrupted_cases();

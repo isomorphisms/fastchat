@@ -1,4 +1,4 @@
-# First C pass: source prepared; execution blocked
+# First C pass: source prepared; execution in progress
 
 This is implementation source, **not a working vertical-slice receipt**.
 The two-pass gate remains closed: no Lua policy implementation has begun.
@@ -33,8 +33,10 @@ only the unconsumed slice. Permanent errors poison the writer until replay.
 There is no queue and no full-response allocation in the disk implementation.
 The RAM sink exists only in the test program.
 
-Cancellation pending still admits response bytes after response-start; cancellation
-before response-start cannot admit bytes. The first admitted terminal wins.
+Cancellation pending admits response bytes, start, completion and cancellation
+acknowledgment according to the active Idriç core's phase table, including pending
+cancellation requested before response-start. Provider cancellation is admitted
+during generation as well as after a local cancellation request. The first admitted terminal wins.
 Uncertain delivery requires explicit retry; old-attempt bytes and terminals fail
 admission without new journal records. This follows the semantics inspected in
 [isomorphisms/fastchat PR #4, “Implement executable Idriç conversation core”](https://github.com/isomorphisms/fastchat/pull/4)
@@ -62,8 +64,8 @@ Use the real Grease entrypoint and a source-built ICK driver/support directory:
 
 This only builds; execute OUTPUT with the matching runtime. The recipe requires
 an explicit driver, accepts explicit target libraries, compiles the actual arrow
-source, and never substitutes Clang. Both recipe execution and application C
-compilation are NOT_RUN for this source revision.
+source, and never substitutes Clang. Recipe execution is NOT_RUN. The exact-head GitHub producer workflow builds
+ICK and executes the C source; pending runs are not passing evidence.
 
 tests/conversation.c contains assertions for empty bodies; every cut of a valid
 UTF-8 body; completed replay; duplicate terminals; cancellation races; explicit
@@ -72,7 +74,7 @@ uncertainty/retry/stale attempts; actual child-process death; torn/corrupt journ
 records; backpressure; a giant offered chunk; bounded reads; and byte-for-byte RAM
 control comparison. Authored tests are not passing test evidence.
 
-## Exact current blocker — 2026-10-07
+## Producer recovery and qualification — 2026-10-07
 
 After the compiler repair, an actual syntax check of unchanged NDK r29 file and
 NativeActivity headers passed with the locally rebuilt ICK/GCC AArch64 frontend,
@@ -88,20 +90,32 @@ also has active declaration work; reconcile that existing work rather than
 opening a competing integration request. Its current source is not substituted
 for the tested local repair.
 
-The fresh ARM32 compiler build stopped at a bootstrap dependency:
+The earlier fresh ARM32 compiler build stopped at a bootstrap dependency:
 gengtype-lex.cc was missing after flex could not run. Before repair/retry,
 the local executor stopped returning even a pwd command, including from /tmp
 with a non-login shell. Outstanding file writes/build checks could not be
 confirmed. GitHub remained available and preserved these source files.
 
-Required next work, still authorized: recover producer execution, preserve and
+Producer execution has returned with replacement checkouts under a different
+workspace; the unpublished compiler sources are being reconstructed. The
+original materialized compiler/build directories are absent. The first host
+GitHub run at FastChat 6710f393318c0d4d18c30c995dd969f1b998b9b1 compiled the
+actual arrow C source, then failed at static linking because its recipe omitted
+GCC's unwind library. It executed no application tests or measurements.
+[Run 37576109211](https://github.com/isomorphisms/fastchat/actions/runs/37576109211).
+The revised recipe explicitly links libgcc_eh and preserves the producer compiler.
+
+Required next work, still authorized: preserve and
 qualify the compiler fix (including API 21 ARM32), build/run/repair this C core,
 complete the native Canvas/Paint presentation and composer through the pinned
 android-NDK NativeActivity packager, then perform actual Icky Lua policy
 refactoring using isomorphisms/lua at 87306483cec50f8c750a22dda1d0742246fad756.
 No stock-Lua fallback or consumer glyph translator is permitted.
 
-Full corpus/framing runner, streaming hostile-split tests, measured RAM/disk
-comparison, Android APK/signing/publication and all physical MIRO A1 acceptance
-are **BLOCKED/NOT_RUN**. No build tools were installed on the phone.
+Full corpus/framing runner, streaming hostile-split tests, Android
+APK/signing/publication and all physical MIRO A1 acceptance
+are **BLOCKED/NOT_RUN**. A separate-process 8 MiB C control comparison is authored
+in the producer workflow; its measurements are pending exact-run evidence.
+These are bounded host file-reader measurements, not Android visible-text latency.
+No build tools were installed on the phone.
 The experiment branches remain independent and must not be merged.
