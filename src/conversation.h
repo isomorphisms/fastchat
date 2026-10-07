@@ -11,6 +11,7 @@ typedef struct { Result result; size_t consumed; } WriteResult;
 typedef struct { uint64_t capacity, written, durable, committed, received, eligible; } Extents;
 typedef struct {
     uint64_t data_bytes, journal_bytes, write_count, barrier_count;
+    uint64_t reserve_bytes, reserve_calls;
     size_t maximum_write, maximum_view;
 } StoreMeasurements;
 typedef struct {
