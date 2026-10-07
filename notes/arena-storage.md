@@ -18,7 +18,7 @@ The journal remains authoritative. FastChat does not use the arena library's
 `.used` sidecar protocol for response visibility because the existing journal
 already defines durable/committed response extents.
 
-The record extent field is an absolute byte position in `responses.arena`.
+The arena-backed journal is versioned as `FC02`; it is intentionally not read as the earlier per-attempt `FC01` store format. The record extent field is an absolute byte position in `responses.arena`.
 For SUBMIT/RETRY it records the new attempt base. For PREFIX and terminal
 records it records `base + durable_extent`. The in-memory response extents
 remain relative to the current attempt, so the renderer and transport contracts
