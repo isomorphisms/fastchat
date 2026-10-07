@@ -1,0 +1,25 @@
+case	expected_result	status
+empty_response	completed immutable zero-byte response; terminal marker visible	NOT_RUN
+one_chunk	exact response bytes; one canonical completion	NOT_RUN
+many_chunks	exact response bytes regardless of boundaries	NOT_RUN
+utf8_split	exact bytes retained; no invalid displayed UTF-8	NOT_RUN
+byte_preservation	RAM and disk completed byte streams match exactly	NOT_RUN
+interrupted_write	no committed completion; short-write result propagated	NOT_RUN
+restart_interrupted	partial attempt distinguished; no invented remote completion	NOT_RUN
+restart_completed	immutable response and canonical events replay exactly	NOT_RUN
+duplicate_terminal	first admitted terminal event only; duplicate diagnostic	NOT_RUN
+stale_attempt	old-attempt event rejected; canonical journal unchanged	NOT_RUN
+cancellation	request-scoped pending cancellation; first admitted terminal wins	NOT_RUN
+uncertain_delivery	explicit uncertain state; explicit retry with fresh attempt	NOT_RUN
+ram_control	completed logical response and canonical events equal disk sink	NOT_RUN
+sse_json_split	framing decoded across boundaries before response-byte admission	NOT_RUN
+markdown_split	renderer state survives delimiter and code-fence splits	NOT_RUN
+tiny_chunks	bounded buffering; exact bytes and canonical semantics	NOT_RUN
+giant_chunk	bounded slice writes; producer receives explicit backpressure	NOT_RUN
+empty_keepalive	no spurious response bytes or terminal completion	NOT_RUN
+slow_renderer	bounded viewport and store cursor; no full-answer private copy	NOT_RUN
+slow_store	producer throttled; no silent drops or unbounded queue	NOT_RUN
+completion_cancel_race	deterministic first admitted terminal wins in both orderings	NOT_RUN
+torn_commit_record	replay rejects incomplete record; no invented completion	NOT_RUN
+durability_batch	written and durable extents distinguishable before barrier	NOT_RUN
+storage_exhaustion	no acknowledged durable event after failed write/barrier	NOT_RUN
