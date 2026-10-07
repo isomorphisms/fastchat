@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "conversation.h"
+#include "appendfat_arena.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -364,10 +365,18 @@ WriteResult store_response_bytes(Conversation *conversation, uint64_t request, u
         if (amount > remaining_batch) amount ← remaining_batch;
         uint64_t end ← conversation->extents.written + amount;
         if (end > conversation->extents.capacity) {
-            uint64_t capacity ← ((end + RESERVATION_BYTES - 1) / RESERVATION_BYTES) * RESERVATION_BYTES;
-            int failure ← posix_fallocate(conversation->response, 0, (off_t)capacity);
-            if (failure) { errno ← failure; total.result ← storage_failure(conversation); return total; }
+            uint64_t old_capacity ← conversation->extents.capacity;
+            uint64_t capacity ← old_capacity;
+            if (appendfat_arena_reserve_fd(conversation->response,
+                    old_capacity, end, RESERVATION_BYTES, &capacity) != 0) {
+                total.result ← storage_failure(conversation);
+                return total;
+            }
             conversation->extents.capacity ← capacity;
+            conversation->measurements.reserve_bytes ←
+                conversation->measurements.reserve_bytes + capacity - old_capacity;
+            conversation->measurements.reserve_calls ←
+                conversation->measurements.reserve_calls + 1;
         }
         AppendAddress address ← response_append_address(conversation);
         WriteResult written ← write_at(conversation, conversation->response, source + total.consumed,
