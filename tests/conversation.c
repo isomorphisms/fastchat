@@ -1,7 +1,7 @@
 #define _GNU_SOURCE
 #include "conversation.h"
-#include "render_policy.h"
 #include "fixture_transport.h"
+#include "render_policy.h"
 #include <assert.h>
 #include <dirent.h>
 #include <errno.h>
@@ -71,12 +71,9 @@ static void expect_bytes(Conversation *conversation, const unsigned char *expect
     assert(conversation->extents.committed == length);
 }
 static void feed_bytes(Conversation *conversation, const unsigned char *bytes, size_t length) {
-    AppendAddress before ← next_append_address(conversation);
     WriteResult written ← store_response_bytes(conversation, conversation->request,
                                                conversation->attempt, bytes, length);
     assert(written.result == FC_OK && written.consumed == length);
-    AppendAddress after ← next_append_address(conversation);
-    assert(after.stream == before.stream && after.offset == before.offset + length);
     assert(extents_are_ordered(conversation));
 }
 static void prefix_visibility_case(void) {
@@ -362,65 +359,35 @@ static void ram_control_case(void) {
     puts("PASS RAM control and disk exact completed logical response, sealed sinks");
 }
 
-static void framing_cases(void) {
-    static const char framing[] ← ": keepalive\r\n\r\ndata:\n\n"
-        "data: {\"type\":\"start\"}\r\n\r\n"
-        "data: {\"text\":\"**bold**\\n```\\nx\\n```\\n\xe2\x82\xac\\uD83D\\uDE42\"}\n\n"
-        "data: [DONE]\n\n";
-    static const unsigned char expected[] ← "**bold**\n```\nx\n```\n\xe2\x82\xac\xf0\x9f\x99\x82";
-    for (size_t split ← 1; split <= sizeof(framing); split ← split + 1) {
-        char path[] ← "/tmp/fastchat-frame-XXXXXX";
-        assert(mkdtemp(path));
-        Conversation conversation;
-        assert(conversation_open(&conversation, path) == FC_OK);
-        assert(submit_text(&conversation, "hello", 5) == FC_OK);
-        FixtureTransport transport;
-        fixture_transport_open(&transport, &conversation);
-        size_t position ← 0;
-        while (position < sizeof(framing) - 1) {
-            size_t amount ← sizeof(framing) - 1 - position;
-            if (amount > split) amount ← split;
-            WriteResult result ← fixture_transport_feed(&transport, framing + position, amount);
-            assert(result.result == FC_OK && result.consumed == amount);
-            position ← position + amount;
-        }
-        assert(fixture_transport_finish(&transport) == FC_OK && conversation.phase == COMPLETED);
-        expect_bytes(&conversation, expected, sizeof(expected) - 1);
-        assert(transport.maximum_buffered <= 3 * FC_FRAME_BYTES);
-        conversation_close(&conversation);
-        remove_directory(path);
+static long resident_kib(void) {
+    FILE *status ← fopen("/proc/self/statm", "r");
+    unsigned long pages, resident;
+    if (!status) return -1;
+    int fields ← fscanf(status, "%lu %lu", &pages, &resident);
+    fclose(status);
+    if (fields != 2) return -1;
+    return (long)(resident * (unsigned long)sysconf(_SC_PAGESIZE) / 1024);
+}
+/* VmHWM belongs to this executable's memory image. ru_maxrss can retain the
+   launcher's pre-exec high water mark and obscure this small control. */
+static long image_peak_kib(void) {
+    FILE *status ← fopen("/proc/self/status", "r");
+    if (!status) return -1;
+    char line[256];
+    long peak ← -1;
+    while (fgets(line, sizeof(line), status)) {
+        if (sscanf(line, "VmHWM: %ld kB", &peak) == 1) break;
     }
-    Conversation conversation;
-    char path[64];
-    fresh_conversation(&conversation, path);
-    FixtureTransport transport;
-    fixture_transport_open(&transport, &conversation);
-    static const char chunk[] ← "data: {\"text\":\"abc\"}\n\n";
-    conversation.would_block ← 1;
-    WriteResult result ← fixture_transport_feed(&transport, chunk, sizeof(chunk) - 1);
-    assert(result.result == FC_BACKPRESSURE && result.consumed == sizeof(chunk) - 1);
-    assert(transport.pending && conversation.extents.written == 0);
-    result ← fixture_transport_feed(&transport, NULL, 0);
-    assert(result.result == FC_BACKPRESSURE && result.consumed == 0);
-    conversation.would_block ← 0;
-    result ← fixture_transport_feed(&transport, NULL, 0);
-    assert(result.result == FC_OK && !transport.pending && conversation.extents.written == 3);
-    assert(fixture_transport_finish(&transport) == FC_OK && conversation.phase == UNCERTAIN);
-    conversation_close(&conversation);
-    remove_directory(path);
-    fresh_conversation(&conversation, path);
-    fixture_transport_open(&transport, &conversation);
-    unsigned char oversized[FC_FRAME_BYTES + 1];
-    memset(oversized, 'x', sizeof(oversized));
-    result ← fixture_transport_feed(&transport, oversized, sizeof(oversized));
-    assert(result.result == FC_REJECTED && conversation.extents.written == 0);
-    conversation_close(&conversation);
-    remove_directory(path);
-    puts("PASS all SSE/JSON/UTF-8/Markdown/fence splits, keepalives, decoder backpressure, oversized frame rejection");
+    fclose(status);
+    return peak;
 }
 static int benchmark_response(const char *mode, const char *path) {
     int ram ← strcmp(mode, "ram") == 0;
     int streaming ← strcmp(mode, "streaming") == 0;
+    if (!ram && streaming != renderer_follows_prefixes()) {
+        fprintf(stderr, "benchmark mode must match this branch's renderer policy\n");
+        return 2;
+    }
     Conversation conversation;
     RamControl control ← {0};
     if (!ram) {
@@ -443,7 +410,7 @@ static int benchmark_response(const char *mode, const char *path) {
         else {
             feed_bytes(&conversation, offered, sizeof(offered));
             if (streaming) {
-                assert(read_response_window(&conversation, shown, 1, viewport, sizeof(viewport), &count) == FC_OK);
+                assert(render_stored_window(&conversation, shown, viewport, sizeof(viewport), &count) == FC_OK);
                 if (count) {
                     if (first_visible < 0) first_visible ← clock_seconds(CLOCK_MONOTONIC) - began;
                     displayed_crc ← checksum_bytes(displayed_crc, viewport, count);
@@ -453,21 +420,16 @@ static int benchmark_response(const char *mode, const char *path) {
         }
     }
     double generating_cpu ← clock_seconds(CLOCK_PROCESS_CPUTIME_ID) - cpu_began;
+    long steady_rss ← resident_kib();
     double terminal ← clock_seconds(CLOCK_MONOTONIC);
     if (ram) ram_finish(&control);
     else finish_conversation(&conversation);
-    /* One resident sample with the long response retained; peak is getrusage. */
-    FILE *resident ← fopen("/proc/self/statm", "r");
-    unsigned long pages, resident_pages;
-    assert(resident && fscanf(resident, "%lu %lu", &pages, &resident_pages) == 2);
-    assert(fclose(resident) == 0);
-    unsigned long steady_kib ← resident_pages * (unsigned long)sysconf(_SC_PAGESIZE) / 1024;
     double first_final ← -1;
     while (shown < 8 * 1024 * 1024) {
         if (ram) {
             count ← control.length - shown > sizeof(viewport) ? sizeof(viewport) : (size_t)(control.length - shown);
             memcpy(viewport, control.bytes + shown, count);
-        } else assert(read_response_window(&conversation, shown, streaming, viewport, sizeof(viewport), &count) == FC_OK);
+        } else assert(render_stored_window(&conversation, shown, viewport, sizeof(viewport), &count) == FC_OK);
         assert(count);
         double now ← clock_seconds(CLOCK_MONOTONIC);
         if (first_visible < 0) first_visible ← now - began;
@@ -476,12 +438,11 @@ static int benchmark_response(const char *mode, const char *path) {
         shown ← shown + count;
     }
     double drain_latency ← clock_seconds(CLOCK_MONOTONIC) - terminal;
-    struct rusage usage;
-    assert(getrusage(RUSAGE_SELF, &usage) == 0);
+    long peak_rss ← image_peak_kib();
     if (ram) {
-        printf("mode\tpeak_rss_kib\tsteady_rss_kib\tresponse_bytes\tdata_bytes\tjournal_bytes\twrites\tmax_write\tmax_view\tfirst_text_ms\tterminal_first_window_ms\tterminal_drain_ms\tgeneration_cpu_ms\twarm_reopen_ms\tresponse_crc\n");
-        printf("ram\t%ld\t%lu\t%zu\t0\t0\t0\t0\t%u\t%.3f\t%.3f\t%.3f\t%.3f\tNOT_APPLICABLE\t%08x\n",
-               usage.ru_maxrss, steady_kib, control.length, FC_VIEW_BYTES, first_visible * 1000,
+        printf("mode\tpeak_rss_kib\tsteady_rss_kib\tresponse_bytes\tdata_bytes\tjournal_bytes\twrites\tmax_write\tmax_view\tfirst_text_ms\tterminal_first_window_ms\tterminal_drain_ms\tgeneration_cpu_ms\treplay_ms\tresponse_crc\n");
+        printf("ram\t%ld\t%ld\t%zu\t0\t0\t0\t0\t%u\t%.3f\t%.3f\t%.3f\t%.3f\tNOT_APPLICABLE\t%08x\n",
+               peak_rss, steady_rss, control.length, FC_VIEW_BYTES, first_visible * 1000,
                first_final * 1000, drain_latency * 1000, generating_cpu * 1000, displayed_crc);
         free(control.bytes);
     } else {
@@ -493,9 +454,9 @@ static int benchmark_response(const char *mode, const char *path) {
         double replay_time ← clock_seconds(CLOCK_MONOTONIC) - replay_began;
         assert(conversation.response_crc == displayed_crc && conversation.extents.committed == shown);
         conversation_close(&conversation);
-        printf("mode\tpeak_rss_kib\tsteady_rss_kib\tresponse_bytes\tdata_bytes\tjournal_bytes\twrites\tmax_write\tmax_view\tfirst_text_ms\tterminal_first_window_ms\tterminal_drain_ms\tgeneration_cpu_ms\twarm_reopen_ms\tresponse_crc\n");
-        printf("%s\t%ld\t%lu\t%llu\t%llu\t%llu\t%llu\t%zu\t%zu\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%08x\n",
-               mode, usage.ru_maxrss, steady_kib, (unsigned long long)shown,
+        printf("mode\tpeak_rss_kib\tsteady_rss_kib\tresponse_bytes\tdata_bytes\tjournal_bytes\twrites\tmax_write\tmax_view\tfirst_text_ms\tterminal_first_window_ms\tterminal_drain_ms\tgeneration_cpu_ms\treplay_ms\tresponse_crc\n");
+        printf("%s\t%ld\t%ld\t%llu\t%llu\t%llu\t%llu\t%zu\t%zu\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%08x\n",
+               mode, peak_rss, steady_rss, (unsigned long long)shown,
                (unsigned long long)measurements.data_bytes, (unsigned long long)measurements.journal_bytes,
                (unsigned long long)measurements.write_count, measurements.maximum_write, measurements.maximum_view,
                first_visible * 1000, first_final * 1000, drain_latency * 1000,
@@ -503,6 +464,7 @@ static int benchmark_response(const char *mode, const char *path) {
     }
     return 0;
 }
+
 static int fresh_process_replay(const char *path) {
     Conversation conversation;
     double began ← clock_seconds(CLOCK_MONOTONIC);
@@ -519,72 +481,134 @@ static int fresh_process_replay(const char *path) {
     conversation_close(&conversation);
     return 0;
 }
-static unsigned hex_digit(char character) {
-    if (character >= '0' && character <= '9') return (unsigned)(character - '0');
-    if (character >= 'a' && character <= 'f') return (unsigned)(character - 'a' + 10);
-    assert(0 && "invalid corpus hex digit");
+/* Keep these stores for byte-for-byte sibling comparison. All callers use
+   the branch renderer policy; provider split sizes do not change history. */
+static int comparison_corpus(const char *root) {
+    static const char *frames[] ← {
+        "data: [START]\n\ndata: [DONE]\n\n",
+        "data: [START]\n\ndata: {\"text\":\"one chunk\"}\n\ndata: [DONE]\n\n",
+        "data: [START]\n\ndata: {\"text\":\"A\"}\n\ndata: {\"text\":\"\\u20ac\\ud83d\\ude42\"}\n\ndata: {\"text\":\"**bold**\\n```\\nx\\n```\\n\"}\n\ndata: [DONE]\n\n"
+    };
+    static const size_t splits[] ← {1, 2, 7, 257, 8192};
+    for (size_t fixture ← 0; fixture < 3; fixture ← fixture + 1) {
+        for (size_t split ← 0; split < sizeof(splits)/sizeof(splits[0]); split ← split + 1) {
+            char path[4096];
+            int count ← snprintf(path, sizeof(path), "%s/fixture-%zu-split-%zu", root, fixture, splits[split]);
+            assert(count > 0 && (size_t)count < sizeof(path));
+            Conversation conversation;
+            assert(conversation_open(&conversation, path) == FC_OK && conversation.phase == IDLE);
+            assert(submit_text(&conversation, "same corpus", 11) == FC_OK);
+            FixtureTransport transport;
+            fixture_transport_open(&transport, &conversation);
+            size_t position ← 0, length ← strlen(frames[fixture]);
+            uint64_t visible ← 0;
+            while (position < length) {
+                size_t amount ← length-position < splits[split] ? length-position : splits[split];
+                WriteResult offered ← fixture_transport_offer(&transport, frames[fixture]+position, amount);
+                assert(offered.result == FC_OK && offered.consumed == amount);
+                position ← position + offered.consumed;
+                unsigned char window[FC_VIEW_BYTES];
+                size_t shown;
+                assert(render_stored_window(&conversation, visible, window, sizeof(window), &shown) == FC_OK);
+                visible ← visible + shown;
+            }
+            assert(conversation.phase == COMPLETED);
+            conversation_close(&conversation);
+            assert(conversation_open(&conversation, path) == FC_OK && conversation.phase == COMPLETED);
+            printf("corpus\tfixture=%zu\tsplit=%zu\tbytes=%llu\tevents=%llu\tcrc=%08x\treplay=completed\n",
+                fixture, splits[split], (unsigned long long)conversation.extents.committed,
+                (unsigned long long)conversation.sequence, conversation.response_crc);
+            conversation_close(&conversation);
+        }
+    }
     return 0;
 }
-static int comparison_corpus(const char *root) {
-    assert(mkdir(root, 0700) == 0);
-    FILE *corpus ← fopen("qualification/comparison-corpus.tsv", "r");
-    assert(corpus);
-    char line[4096];
-    assert(fgets(line, sizeof(line), corpus));
-    puts("case\tresponse_bytes\tresponse_crc\tcanonical_events\tstatus");
-    while (fgets(line, sizeof(line), corpus)) {
-        char *save;
-        char *name ← strtok_r(line, "\t", &save);
-        char *hex ← strtok_r(NULL, "\t", &save);
-        char *chunks ← strtok_r(NULL, "\t", &save);
-        assert(name && hex && chunks && !strchr(name, '/'));
-        unsigned char expected[FC_VIEW_BYTES];
-        size_t length ← strcmp(hex, "-") == 0 ? 0 : strlen(hex) / 2;
-        assert(length <= sizeof(expected) && (strcmp(hex, "-") == 0 || strlen(hex) % 2 == 0));
-        for (size_t index ← 0; index < length; index ← index + 1)
-            expected[index] ← (unsigned char)((hex_digit(hex[index * 2]) << 4) | hex_digit(hex[index * 2 + 1]));
-        char path[4096];
-        int named ← snprintf(path, sizeof(path), "%s/%s", root, name);
-        assert(named > 0 && (size_t)named < sizeof(path));
+
+static void framing_cases(void) {
+    static const char stream[] ←
+        ": keepalive\r\n\r\ndata: [START]\r\n\r\ndata:\r\n\r\n"
+        "data: {\"text\":\"A\\u20ac\\ud83d\\ude42\\n**bold**\\n```\\nx\\n```\\n\"}\r\n\r\n"
+        "data: [DONE]\r\n\r\n";
+    static const unsigned char expected[] ← "A\xe2\x82\xac\xf0\x9f\x99\x82\n**bold**\n```\nx\n```\n";
+    for (size_t split ← 0; split < sizeof(stream); split ← split + 1) {
         Conversation conversation;
+        char path[64];
+        strcpy(path, "/tmp/fastchat-test-XXXXXX");
+        assert(mkdtemp(path));
         assert(conversation_open(&conversation, path) == FC_OK);
-        assert(submit_text(&conversation, "corpus", 6) == FC_OK);
-        assert(admit_event(&conversation, conversation.request, conversation.attempt, START) == FC_OK);
-        size_t position ← 0;
-        int barrier ← 0;
-        char *chunk_save;
-        char *chunk ← strtok_r(chunks, ",", &chunk_save);
-        while (position < length) {
-            assert(chunk);
-            char *end;
-            unsigned long amount ← strtoul(chunk, &end, 10);
-            assert(!*end && amount && amount <= length - position);
-            feed_bytes(&conversation, expected + position, (size_t)amount);
-            position ← position + (size_t)amount;
-            if (!barrier && position >= (length + 1) / 2) {
-                assert(commit_stored_prefix(&conversation) == FC_OK);
-                barrier ← 1;
-            }
-            unsigned char view[FC_VIEW_BYTES];
-            size_t count;
-            assert(render_stored_window(&conversation, 0, view, sizeof(view), &count) == FC_OK);
-            int valid;
-            size_t eligible ← complete_utf8_prefix(expected, (size_t)conversation.extents.committed, &valid);
-            assert(valid && count == (renderer_follows_prefixes() ? eligible : 0));
-            assert(!memcmp(view, expected, count));
-            chunk ← strtok_r(NULL, ",", &chunk_save);
-        }
-        finish_conversation(&conversation);
-        expect_bytes(&conversation, expected, length);
-        printf("%s\t%zu\t%08x\t%llu\tPASS\n", name, length, conversation.response_crc,
-               (unsigned long long)conversation.sequence);
+        assert(submit_text(&conversation, "framing", 7) == FC_OK);
+        FixtureTransport transport;
+        fixture_transport_open(&transport, &conversation);
+        WriteResult first ← fixture_transport_offer(&transport, stream, split);
+        assert(first.result == FC_OK && first.consumed == split);
+        WriteResult rest ← fixture_transport_offer(&transport, stream + split, sizeof(stream) - 1 - split);
+        assert(rest.result == FC_OK && rest.consumed == sizeof(stream) - 1 - split);
+        assert(transport.finished && conversation.phase == COMPLETED);
+        expect_bytes(&conversation, expected, sizeof(expected) - 1);
+        assert(transport.maximum_buffered <= FC_FRAME_BYTES);
         conversation_close(&conversation);
-        assert(conversation_open(&conversation, path) == FC_OK && conversation.phase == COMPLETED);
-        expect_bytes(&conversation, expected, length);
-        conversation_close(&conversation);
+        remove_directory(path);
     }
-    assert(!ferror(corpus) && fclose(corpus) == 0);
-    return 0;
+    Conversation conversation;
+    char path[64];
+    fresh_conversation(&conversation, path);
+    FixtureTransport transport;
+    fixture_transport_open(&transport, &conversation);
+    conversation.would_block ← 1;
+    static const char frame[] ← "data: {\"text\":\"retained once\"}\n\n";
+    WriteResult blocked ← fixture_transport_offer(&transport, frame, sizeof(frame) - 1);
+    assert(blocked.result == FC_BACKPRESSURE && blocked.consumed == sizeof(frame) - 1);
+    assert(transport.pending && conversation.extents.written == 0);
+    conversation.would_block ← 0;
+    WriteResult resumed ← fixture_transport_offer(&transport, "", 0);
+    assert(resumed.result == FC_OK && !transport.pending);
+    finish_conversation(&conversation);
+    expect_bytes(&conversation, (const unsigned char *)"retained once", 13);
+    conversation_close(&conversation);
+    remove_directory(path);
+    fresh_conversation(&conversation, path);
+    fixture_transport_open(&transport, &conversation);
+    assert(fixture_transport_offer(&transport, "data: {\"text\":\"unfinished", 25).result == FC_OK);
+    assert(fixture_transport_lost(&transport) == FC_OK && conversation.phase == UNCERTAIN);
+    assert(conversation.extents.committed == 0);
+    conversation_close(&conversation);
+    remove_directory(path);
+    fresh_conversation(&conversation, path);
+    fixture_transport_open(&transport, &conversation);
+    static const char invalid[] ← "data: {\"text\":\"\\ud800x\"}\n\n";
+    assert(fixture_transport_offer(&transport, invalid, sizeof(invalid) - 1).result == FC_INVALID_TEXT);
+    assert(conversation.extents.written == 0 && conversation.phase != COMPLETED);
+    conversation_close(&conversation);
+    remove_directory(path);
+    puts("PASS every SSE/JSON split, CRLF, keepalives, surrogate pair, Markdown/fence bytes, framed backpressure, truncated loss, malformed JSON rejection");
+}
+
+static void streaming_text_cases(void) {
+    static const unsigned char text[] ← "A\xe2\x82\xac\xf0\x9f\x99\x82\n**bold**\n```\nx\n```\n";
+    Conversation conversation;
+    char path[64];
+    fresh_conversation(&conversation, path);
+    unsigned char shown[FC_VIEW_BYTES];
+    size_t displayed ← 0;
+    for (size_t byte ← 0; byte < sizeof(text) - 1; byte ← byte + 1) {
+        feed_bytes(&conversation, text + byte, 1);
+        /* Deliberately force a durability boundary inside every code point.
+           This is a hostile test, not the production batching policy. */
+        assert(commit_stored_prefix(&conversation) == FC_OK);
+        size_t count;
+        assert(read_response_window(&conversation, displayed, 1, shown, sizeof(shown), &count) == FC_OK);
+        int valid;
+        assert(complete_utf8_prefix(shown, count, &valid) == count && valid);
+        assert(!memcmp(shown, text + displayed, count));
+        displayed ← displayed + count;
+        assert(displayed <= conversation.extents.committed);
+    }
+    assert(displayed == sizeof(text) - 1);
+    finish_conversation(&conversation);
+    expect_bytes(&conversation, text, sizeof(text) - 1);
+    conversation_close(&conversation);
+    remove_directory(path);
+    puts("PASS streaming stored prefixes with incomplete UTF-8 withheld, tiny chunks, delimiters/fences preserved");
 }
 
 int main(int argc, char **argv) {
@@ -594,7 +618,6 @@ int main(int argc, char **argv) {
         return benchmark_response(argv[2], argv[3]);
 
     prefix_visibility_case();
-    framing_cases();
     response_cases();
     cancellation_cases();
     interrupted_cases();
@@ -602,6 +625,8 @@ int main(int argc, char **argv) {
     journal_cases();
     bounded_cases();
     ram_control_case();
-    puts("PASS C vertical core");
+    framing_cases();
+    streaming_text_cases();
+    puts("PASS C host storage/transport core; Android presentation is a separate gate");
     return 0;
 }

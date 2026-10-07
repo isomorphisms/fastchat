@@ -1,0 +1,15 @@
+#!/usr/bin/env grease
+# Explicit signer and SDK environment are checked by android-NDK's packager.
+set -eu -o pipefail
+if (len(ARGV) !== 3) {
+  echo 'usage: package-native.grease ANDROID_NDK_REPOSITORY NATIVE_LIBRARY OUTPUT_APK'
+  exit 2
+}
+var directory = $(dirname "$0")
+var repository = $(realpath "$directory/..")
+var packaging = ARGV[0]
+var native = ARGV[1]
+var output = ARGV[2]
+test -f "$packaging/apk/build-nativeactivity-apk.sh"
+# The maintained foreign packager is Bash source (not executable in its tree).
+bash "$packaging/apk/build-nativeactivity-apk.sh" "$repository/android/AndroidManifest.xml" "$native" armeabi-v7a "$output"
