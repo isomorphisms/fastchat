@@ -22,7 +22,10 @@ committed bytes are separate counters. Always:
 `eligible ≤ committed ≤ durable ≤ written ≤ capacity`.
 
 Received counts logical response bytes offered to the sink, including an
-unconsumed offer; it does not count JSON/SSE envelope bytes. Reservations grow
+unconsumed offer; it does not count JSON/SSE envelope bytes. Completion rejects
+an outstanding unconsumed offer. On replay, received/written/durable extents are
+reconstructed at the committed lower bound; pre-death uncommitted receive/write
+progress is unknown, and a nonterminal attempt becomes uncertain. Reservations grow
 in 65536-byte increments. Every 16384 written bytes, a data barrier precedes a
 checksummed prefix record and journal barrier. Native presentation also requests
 a barrier after 200 ms with pending bytes. Both branches use the same batching;

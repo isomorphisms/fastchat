@@ -197,6 +197,8 @@ static Result validate_prefix(Conversation *conversation, uint64_t extent, uint3
     }
     if (checksum != expected) return FC_CORRUPT;
     conversation->response_crc ← checksum;
+    /* Uncommitted receive/write progress is unknown after restart. */
+    conversation->extents.received ← extent;
     conversation->extents.written ← extent;
     conversation->extents.durable ← extent;
     conversation->extents.committed ← extent;
@@ -385,6 +387,8 @@ Result admit_event(Conversation *conversation, uint64_t request, uint64_t attemp
     if (conversation->poisoned) return FC_STORAGE_ERROR;
     if (request != conversation->request || attempt != conversation->attempt
         || !event_is_admissible(conversation, event) || event == SUBMIT || event == RETRY || event == PREFIX)
+        return FC_REJECTED;
+    if (event == COMPLETE && conversation->extents.received != conversation->extents.written)
         return FC_REJECTED;
     /* All metadata records reference a durable checksum, including cancel requests. */
     if (response_phase(conversation) && commit_stored_prefix(conversation) != FC_OK) return FC_STORAGE_ERROR;
