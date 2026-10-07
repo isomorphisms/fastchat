@@ -1,0 +1,8 @@
+{"kind":"assertion","status":"pass","code":"BUILD-TOOLCHAIN-MANIFEST","operation":"nonempty","detail":"ci/build-toolchain.tsv"}
+{"kind":"assertion","status":"pass","code":"BUILD-TOOLCHAIN-HEADER","operation":"tsv_header","detail":"ci/build-toolchain.tsv header=build_id,target,toolchain,ick_revision,ick_status,ick_evidence"}
+{"kind":"assertion","status":"pass","code":"BUILD-TOOLCHAIN-CHOICE","operation":"build_toolchains_allowed","detail":"ci/build-toolchain.tsv uses only ick or ndk"}
+{"kind":"assertion","status":"pass","code":"BUILD-TOOLCHAIN-ICK-REVISION","operation":"build_toolchains_revision","detail":"ci/build-toolchain.tsv pins exact ICK revisions"}
+{"kind":"assertion","status":"pass","code":"BUILD-TOOLCHAIN-ICK-EVIDENCE","operation":"build_toolchains_evidence","detail":"ci/build-toolchain.tsv records ICK qualification evidence"}
+{"kind":"ick-gap","build":"native-platform-link","target":"armeabi-v7a-api26","ickRevision":"515c0f29fe6e2e96e10495fbaf25da93532e7722","gap":"android-platform-crt-linker-runtime","evidence":"notes/disk-path.md"}
+{"kind":"assertion","status":"pass","code":"BUILD-TOOLCHAIN-ICK-GAP","operation":"build_toolchains_ndk_gap","detail":"ci/build-toolchain.tsv explains every NDK fallback"}
+{"kind":"summary","status":"pass","assertions":6,"failures":0}
