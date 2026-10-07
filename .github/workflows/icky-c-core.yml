@@ -25,7 +25,7 @@ jobs:
       - name: Shared build-toolchain contract
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          repository: dilapidated-shed/ai-ci
+          repository: isomorphisms/ai-ci
           ref: 8bf8be153f792c4def251287ed85543d1fe24f07
           path: contract
           persist-credentials: false
@@ -96,4 +96,3 @@ jobs:
             compiler/build/gcc/xgcc
             compiler/build/gcc/cc1
             compiler/build/gcc/collect2
-
