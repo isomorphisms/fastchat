@@ -622,7 +622,9 @@ retry_request wanted
               let updated_core =
                     core_state
                       authority_id
-                      (append_event canonical_event log)
+                      (append_event
+                        canonical_event
+                        (append_event (retry_requested wanted) log))
                       updated_requests
                       next_request
                       (S next_attempt)
