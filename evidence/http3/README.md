@@ -33,7 +33,10 @@ No connection migration or NAT rebinding qualification is claimed.
 NDK r29/API 24 builds both native ARMv7 outputs: stripped DSO 4,823,964 bytes and
 standalone probe 4,826,128 bytes. `a1/` records compiler, ELF, configuration,
 input digests and artifact digests. A1's runtime is 32-bit Bionic/softfp/API 34,
-4 KiB pages. Only Android libc/libdl are dynamically required. The native archive
+4 KiB pages. Only Android libc/libdl are dynamically required. The
+[native archive](a1/fastchat-http3-a1.tar.gz), [digest](a1/archive.sha256) and
+[receipt](a1/receipt.tsv) bind source commit
+`2458a46663bcab29267f133dabceb67162fe5ba3`. The archive
 contains runtime outputs, notices and receipt, with no compiler prerequisites
 on the device.
 
