@@ -1,0 +1,60 @@
+#!/usr/bin/env grease
+# Producer-only. NDK Clang sees assembly and link inputs, never application C.
+set -eu -o pipefail
+if (len(ARGV) < 5 or len(ARGV) > 5) {
+  echo 'usage: build-a1-native.grease ICK_ARM_DRIVER ICK_LIBEXEC NDK OUTPUT SOURCE_REVISION'
+  exit 2
+}
+var compiler = ARGV[0]
+var support = ARGV[1]
+var ndk = ARGV[2]
+var output = ARGV[3]
+var revision = ARGV[4]
+var script_directory = $(dirname "$0")
+var repository = $(realpath "$script_directory/..")
+var toolchain = "$ndk/toolchains/llvm/prebuilt/linux-x86_64"
+var sysroot = "$toolchain/sysroot"
+var glue = "$ndk/sources/android/native_app_glue"
+test -x "$compiler"
+test -x "$support/cc1"
+test -f "$glue/android_native_app_glue.c"
+var identity = $("$compiler" --version)
+echo "$identity" | rg -q '\(GCC\)'
+var target = $("$compiler" -dumpmachine)
+test "$target" = arm-linux-gnueabi
+mkdir -p "$output"
+var sources = ["$repository/src/conversation.c", "$repository/src/render_policy.c",
+               "$repository/src/fixture_transport.c", "$repository/android/native_chat.c",
+               "$glue/android_native_app_glue.c"]
+var objects = []
+for source in (sources) {
+  var name = $(basename "$source" .c)
+  var assembly = "$output/$name.s"
+  var object = "$output/$name.o"
+  "$compiler" "-B$support/" -nostdinc -isystem "$support/include" \
+    -isystem "$sysroot/usr/include" -isystem "$sysroot/usr/include/arm-linux-androideabi" \
+    "-I$repository/src" "-I$glue" -D__ANDROID__ -D__ANDROID_API__=26 \
+    -DBIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD -D_FILE_OFFSET_BITS=64 \
+    -std=c11 -O2 -Wall -Wextra -Werror -fPIC -ffunction-sections -fdata-sections \
+    -marm -march=armv7-a -mfloat-abi=softfp -mfpu=vfpv3-d16 \
+    -S "$source" -o "$assembly"
+  "$toolchain/bin/clang" --target=armv7a-linux-androideabi26 --sysroot="$sysroot" \
+    -marm -march=armv7-a -mfloat-abi=softfp -mfpu=vfpv3-d16 \
+    -x assembler -c "$assembly" -o "$object"
+  call objects->append(object)
+}
+"$toolchain/bin/clang" --target=armv7a-linux-androideabi26 --sysroot="$sysroot" \
+  -shared @objects -Wl,--no-undefined -Wl,--gc-sections \
+  -Wl,-u,ANativeActivity_onCreate -Wl,-soname,libfastchat.so \
+  -Wl,--exclude-libs,ALL -landroid -llog -lm -o "$output/libfastchat.unstripped.so"
+cp "$output/libfastchat.unstripped.so" "$output/libfastchat.so"
+"$toolchain/bin/llvm-strip" --strip-unneeded "$output/libfastchat.so"
+"$toolchain/bin/llvm-readelf" -h -A -d -s "$output/libfastchat.so" > "$output/elf.txt"
+rg -q 'Class:.*ELF32' "$output/elf.txt"
+rg -q 'Machine:.*ARM' "$output/elf.txt"
+rg -q 'GLOBAL.*DEFAULT.*ANativeActivity_onCreate' "$output/elf.txt"
+"$toolchain/bin/llvm-nm" --dynamic --undefined-only "$output/libfastchat.so" > "$output/imports.txt"
+sha256sum @sources "$compiler" "$support/cc1" "$output/libfastchat.so" > "$output/sha256.txt"
+wc -c "$output/libfastchat.unstripped.so" "$output/libfastchat.so" > "$output/sizes.txt"
+printf 'source_revision\t%s\n' "$revision" > "$output/source.tsv"
+echo 'A1 native payload built. Signed APK packaging requires the explicit android-NDK signer profile.'

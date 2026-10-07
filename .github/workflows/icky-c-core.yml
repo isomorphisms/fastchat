@@ -75,7 +75,7 @@ jobs:
           -isystem /usr/include -isystem /usr/include/x86_64-linux-gnu
           -L/usr/lib/gcc/x86_64-linux-gnu/13/ -L/usr/lib/x86_64-linux-gnu/
           -std=c11 -D_FILE_OFFSET_BITS=64 -O2 -Wall -Wextra -Werror
-          -Isrc src/conversation.c src/render_policy.c tests/conversation.c -static
+          -Isrc src/conversation.c src/render_policy.c src/fixture_transport.c tests/conversation.c -static
           -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group -o core-tests
       - name: Execute disk, RAM control, fault and replay cases on host
         run: ./core-tests
@@ -91,3 +91,15 @@ jobs:
         run: cmp benchmark-disk/history.events benchmark-streaming/history.events
       - name: Compare completed response bytes
         run: cmp benchmark-disk/attempt-1.bytes benchmark-streaming/attempt-1.bytes
+      - name: Restart replay in a fresh host process
+        run: ./core-tests replay benchmark-disk
+      - name: Shared deterministic corpus
+        run: ./core-tests corpus corpus-output
+      - name: Preserve C executable and corpus for sibling comparison
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: c-corpus-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            core-tests
+            corpus-output/
+          if-no-files-found: error

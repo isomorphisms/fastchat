@@ -2,10 +2,10 @@
 #define FASTCHAT_CONVERSATION_H
 #include <stddef.h>
 #include <stdint.h>
-enum { FC_PROMPT_BYTES = 1024, FC_WRITE_BYTES = 4096, FC_BATCH_BYTES = 16384, FC_VIEW_BYTES = 4096 };
+enum { FC_PROMPT_BYTES ← 1024, FC_WRITE_BYTES ← 4096, FC_BATCH_BYTES ← 16384, FC_VIEW_BYTES ← 4096 };
 typedef enum { FC_OK, FC_REJECTED, FC_BACKPRESSURE, FC_STORAGE_ERROR, FC_CORRUPT, FC_INVALID_TEXT } Result;
 typedef enum { IDLE, SUBMITTED, GENERATING, CANCEL_PENDING, UNCERTAIN, COMPLETED, CANCELLED, FAILED } Phase;
-typedef enum { SUBMIT = 1, START, PREFIX, COMPLETE, CANCEL_REQUEST, CANCEL_ACK, FAILURE, TRANSPORT_LOSS, RETRY } Event;
+typedef enum { SUBMIT ← 1, START, PREFIX, COMPLETE, CANCEL_REQUEST, CANCEL_ACK, FAILURE, TRANSPORT_LOSS, RETRY } Event;
 typedef struct { uint64_t stream; uint64_t offset; } AppendAddress;
 typedef struct { Result result; size_t consumed; } WriteResult;
 typedef struct { uint64_t capacity, written, durable, committed, received, eligible; } Extents;
@@ -37,9 +37,11 @@ WriteResult store_response_bytes(Conversation *conversation, uint64_t request,
                                  uint64_t attempt, const void *bytes, size_t length);
 Result commit_stored_prefix(Conversation *conversation);
 int extents_are_ordered(const Conversation *conversation);
+AppendAddress next_append_address(const Conversation *conversation);
 Result read_response_window(Conversation *conversation, uint64_t offset, int streaming,
                             unsigned char *bytes, size_t capacity, size_t *length);
 const char *phase_name(Phase phase);
 uint32_t checksum_bytes(uint32_t checksum, const void *bytes, size_t length);
 size_t complete_utf8_prefix(const unsigned char *bytes, size_t length, int *valid);
+size_t encode_utf8_scalar(unsigned codepoint, unsigned char *output);
 #endif
