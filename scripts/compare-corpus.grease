@@ -1,0 +1,14 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) < 2 or len(ARGV) > 2) {
+  echo 'usage: compare-corpus.grease DISK_FIRST_CORPUS STREAMING_CORPUS'
+  exit 2
+}
+var first = ARGV[0]
+var second = ARGV[1]
+var cases = ['empty', 'one', 'many', 'utf8_hostile', 'markdown_delimiter', 'code_fence']
+for name in (cases) {
+  cmp "$first/$name/history.events" "$second/$name/history.events"
+  cmp "$first/$name/attempt-1.bytes" "$second/$name/attempt-1.bytes"
+  echo "PASS $name identical canonical events and completed bytes"
+}

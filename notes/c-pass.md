@@ -1,121 +1,108 @@
-# First C pass: source prepared; execution in progress
+# First C pass
 
-This is implementation source, **not a working vertical-slice receipt**.
-The two-pass gate remains closed: no Lua policy implementation has begun.
-
-Exact fetched FastChat main base:
-b49f0f7083d2d034ba76b910a43592d6d07bd18b.
-
-## Implemented source boundary
+Exact fetched main base: b49f0f7083d2d034ba76b910a43592d6d07bd18b.
+Both comparison branches remain independent and unmerged. Lua has not begun:
+the native C slice still needs producer qualification.
 
 The named composition is submit_text → admit_event(START) →
 store_response_bytes → commit_stored_prefix → admit_event(COMPLETE) →
-read_response_window. Assignments use the current ICK C ← token; pointer
-declarators/dereferences keep their C meaning.
+render_stored_window. Descriptive boundaries use accepted ICK C ← spellings,
+including initialization. Pointer syntax retains its C meaning.
 
-One conversation owns separate request and attempt counters. Each new request
-and explicit uncertain retry creates a separate response file. A length-delimited
-binary journal supplies sequence order. Its fixed, little-endian header contains
-request, attempt, event, referenced extent, rolling response CRC and record CRC.
-Prompt bytes are bounded to 1024. History and attempt files remain on disk; replay
-holds only the current conversation metadata.
+One conversation has separate monotone request and attempt identities. Each
+attempt has an ordinary response file. next_append_address returns the attempt
+stream and written offset. A length-delimited binary journal supplies durable
+ordering, recording sequence, identity, event, referenced extent and CRCs.
+Replay validates the framing, lifecycle, sequence and referenced stored bytes.
 
-Response writes use slices of at most 4096 bytes and reserve backing space through
-posix_fallocate in 65536-byte increments. Written bytes advance only on actual
-write results. At a 16384-byte batch boundary, data fsync precedes the prefix
-journal write and journal fsync. Committed advances afterward. Completion first
-commits the final prefix, truncates reservation slack, seals the file permissions,
-syncs it, then commits a distinct completion event.
+Capacity, written, durable and committed remain distinct. Received is the
+offered logical byte extent; eligible is the committed byte limit. Text visibility
+additionally withholds incomplete UTF-8 scalars. Writes are bounded to 4096 bytes.
+Capacity reservation grows in 65536-byte steps. At 16384 written bytes since
+the last commit, response fsync precedes the prefix record and journal fsync.
+The native fixture uses a shared 100 ms barrier in both branches. No fsync
+is tied to every network fragment. Completion commits the remaining prefix,
+truncates slack, seals file permissions, syncs it and admits a distinct completion.
+The completed response cannot be appended through the API.
 
-The store is synchronous: slow disk blocks the producer; explicit would-block
-returns FC_BACKPRESSURE and the accepted byte count. The caller retains/reoffers
-only the unconsumed slice. Permanent errors poison the writer until replay.
-There is no queue and no full-response allocation in the disk implementation.
-The RAM sink exists only in the test program.
+The synchronous store blocks input on slow disk. Backpressure returns accepted
+bytes; permanent failure poisons the writer until replay. The fixture decoder
+retains three fixed 4096-byte buffers. Its narrow SSE grammar is one JSON data
+line per event, with comments/empty keepalives ignored. Unicode escapes and
+surrogate pairs are decoded to UTF-8. Oversized frames are explicitly rejected.
+There is no disk-path allocation proportional to the response. The RAM sink
+exists only in the control tests. Future appendFAT can replace the small
+file/write/barrier/read boundaries without changing stream/offset or admission;
+appendFAT is not implemented.
 
-Cancellation pending admits response bytes, start, completion and cancellation
-acknowledgment according to the active Idriç core's phase table, including pending
-cancellation requested before response-start. Provider cancellation is admitted
-during generation as well as after a local cancellation request. The first admitted terminal wins.
-Uncertain delivery requires explicit retry; old-attempt bytes and terminals fail
-admission without new journal records. This follows the semantics inspected in
+The phase table follows
 [isomorphisms/fastchat PR #4, “Implement executable Idriç conversation core”](https://github.com/isomorphisms/fastchat/pull/4)
 at c66021957fb5dc195a995b2c0cd212863ff68915, without depending on its merge.
+Cancellation pending permits response events, including cancellation requested
+before start. Provider cancellation is admitted while generating. The first
+terminal wins. Loss becomes uncertainty; explicit retry keeps the request and
+changes the attempt. Old-attempt events are rejected.
 
-Restart validates record framing, sequence, lifecycle and referenced response
-checksums. A torn trailing record is truncated to the last admitted boundary.
-A complete damaged record is a corruption error. A nonterminal recovered attempt
-gets a durable uncertain-delivery event; neither its reserved capacity nor its
-uncommitted file tail becomes completed history. Files for abandoned attempts
-remain separate. The next unused attempt ID can safely reclaim its orphan file
-under the exclusive journal lock.
+Replay truncates a torn journal tail; a full corrupt record is an error.
+Nonterminal recovery durably records uncertainty. A committed partial prefix,
+an uncommitted tail, a stale attempt and a completed immutable response remain
+distinct. Older attempt files remain separate; replay retains only current
+metadata and bounded buffers. The renderer reads one 4096-byte stored window,
+completed-only in FC-D1 and admitted prefixes in FC-S1. Markdown is exact plain
+text in the minimal native presentation.
 
-A renderer reads a bounded 4096-byte UTF-8 window directly from disk. Incomplete
-code points are withheld. Invalid sequences produce an explicit text error.
-The disk-first policy returns no body until completion; the streaming sibling
-uses the same reader against committed prefixes. Markdown is currently plain
-text; there is no Markdown parser or private full-answer renderer buffer.
+## Qualified host receipt
 
-## Recipe and authored tests
+Source 70a1ac0f977dec15356b8926cd19fad50e2979e5 passed in
+[run 37577668540](https://github.com/isomorphisms/fastchat/actions/runs/37577668540).
+Owned ICK source: 14f582c920af18ec20eb5fad2583926e0560b3f5. Its source-built
+GCC frontend compiled actual arrow C. System GCC bootstrapped ICK only;
+GNU libraries provided the explicit static host link.
 
-Use the real Grease entrypoint and a source-built ICK driver/support directory:
+The required empty/chunk/UTF-8/exact-byte/restart/duplicate/stale/cancellation/
+uncertainty/RAM-equivalence cases passed, including short writes, exhaustion,
+failed barriers, child-process death, torn/corrupt journal and backpressure.
+Separate-process 8 MiB host controls measured:
 
-    grease scripts/test-core.grease ICK_DRIVER ICK_LIBEXEC OUTPUT [target compile/link options...]
+| Control | Peak RSS KiB | Data bytes | Journal bytes | Writes | Max write/view |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Disk-first | 816 | 8388608 | 32969 | 2563 | 4096/4096 |
+| Streaming | 944 | 8388608 | 32969 | 2563 | 4096/4096 |
+| RAM | 9036 | 0 | 0 | 0 | 0/4096 |
 
-This only builds; execute OUTPUT with the matching runtime. The recipe requires
-an explicit driver, accepts explicit target libraries, compiles the actual arrow
-source, and never substitutes Clang. Recipe execution is NOT_RUN. The exact-head GitHub producer workflow builds
-ICK and executes the C source; pending runs are not passing evidence.
+Both disk controls produced identical response and canonical journal bytes,
+rolling CRC 31e202a1. File-reader first-text times were 296.074, 0.664 and
+2.187 ms; terminal-to-first-window times 0.309, 0.388 and 0.000 ms respectively.
+These are host file-reader measurements, not Android visible-text acceptance.
+The old replay number was a warm same-process reopen. The expanded runner now
+labels that and separately measures fresh-process replay, filesystem cache
+unspecified, plus a steady resident sample.
 
-tests/conversation.c contains assertions for empty bodies; every cut of a valid
-UTF-8 body; completed replay; duplicate terminals; cancellation races; explicit
-failure; short/partial writes; exhaustion; failed barriers; interrupted restart;
-uncertainty/retry/stale attempts; actual child-process death; torn/corrupt journal
-records; backpressure; a giant offered chunk; bounded reads; and byte-for-byte RAM
-control comparison. Authored tests are not passing test evidence.
+Transferred xgcc SHA-256:
+ae9a7c6f9875e23e25f89f3e15fdebe5668e36dd6f17f5c390e57f60af943f75.
+Transferred cc1 SHA-256:
+8781512d09f7063e93b0fbfc9f4e359e383bebd21fcb3124f5c38901678679f5.
+Current framing/corpus additions also pass locally with this compiler and the
+pinned Grease implementation. The old run does not qualify newer source;
+a fresh exact-head producer run binds the expanded slice.
 
-## Producer recovery and qualification — 2026-10-07
+## Remaining C gate
 
-After the compiler repair, an actual syntax check of unchanged NDK r29 file and
-NativeActivity headers passed with the locally rebuilt ICK/GCC AArch64 frontend,
-API 24, and BIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD. The latter is Bionic's documented
-opt-out for the optional C signedness overload; annotations were retained.
-This is an AArch64/API-24 declaration probe, not the A1/API-21 application gate.
+scripts/test-core.grease has executed successfully through real Grease.
+The expanded runner tests every SSE/JSON/Unicode/Markdown/fence split,
+keepalives, decoder backpressure, shared TSV corpus, steady RSS and fresh-process
+replay. See notes/android-producer.md for the native presentation/build recipe.
 
-The repair checkout is based on ICK assignment fix
-14f582c920af18ec20eb5fad2583926e0560b3f5. Its extra parser/type-check changes
-are locally prepared, not yet published/qualified as a compiler revision.
-Existing [dilapidated-shed/ick PR #74, “Qualify A1 application C without ICK-to-Clang fallback”](https://github.com/dilapidated-shed/ick/pull/74)
-also has active declaration work; reconcile that existing work rather than
-opening a competing integration request. Its current source is not substituted
-for the tested local repair.
+The Android metadata repair is preserved in
+[dilapidated-shed/ick PR #74, “Retain Android annotations and qualify A1 Icky C applications”](https://github.com/dilapidated-shed/ick/pull/74).
+Its first ARM run accepted unmodified Bionic headers and enforced API availability,
+then failed a multiline ARM-attribute receipt check. The repaired ARM job passed
+at c2b84a381d23bf5d0b5153e24be51a52e78a022e in
+[run 37580514958](https://github.com/dilapidated-shed/ick/actions/runs/37580514958),
+job 112659050603. Compiler artifact 11464479465 preserves its exact producer output.
 
-The earlier fresh ARM32 compiler build stopped at a bootstrap dependency:
-gengtype-lex.cc was missing after flex could not run. Before repair/retry,
-the local executor stopped returning even a pwd command, including from /tmp
-with a non-login shell. Outstanding file writes/build checks could not be
-confirmed. GitHub remained available and preserved these source files.
-
-Producer execution has returned with replacement checkouts under a different
-workspace; the unpublished compiler sources are being reconstructed. The
-original materialized compiler/build directories are absent. The first host
-GitHub run at FastChat 6710f393318c0d4d18c30c995dd969f1b998b9b1 compiled the
-actual arrow C source, then failed at static linking because its recipe omitted
-GCC's unwind library. It executed no application tests or measurements.
-[Run 37576109211](https://github.com/isomorphisms/fastchat/actions/runs/37576109211).
-The revised recipe explicitly links libgcc_eh and preserves the producer compiler.
-
-Required next work, still authorized: preserve and
-qualify the compiler fix (including API 21 ARM32), build/run/repair this C core,
-complete the native Canvas/Paint presentation and composer through the pinned
-android-NDK NativeActivity packager, then perform actual Icky Lua policy
-refactoring using isomorphisms/lua at 87306483cec50f8c750a22dda1d0742246fad756.
-No stock-Lua fallback or consumer glyph translator is permitted.
-
-Full corpus/framing runner, streaming hostile-split tests, Android
-APK/signing/publication and all physical MIRO A1 acceptance
-are **BLOCKED/NOT_RUN**. A separate-process 8 MiB C control comparison is authored
-in the producer workflow; its measurements are pending exact-run evidence.
-These are bounded host file-reader measurements, not Android visible-text latency.
-No build tools were installed on the phone.
-The experiment branches remain independent and must not be merged.
+Native producer execution is pending. Signed APK is BLOCKED by absent explicit
+signer inputs. Physical A1 execution, screen latency and device RSS are
+BLOCKED/NOT_RUN. No build tools were installed on the phone. Complete the C
+native slice before the actual Icky Lua pass using
+isomorphisms/lua@87306483cec50f8c750a22dda1d0742246fad756.

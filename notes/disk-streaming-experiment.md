@@ -1,25 +1,22 @@
-# FC-S1 — disk-backed streaming comparison
+# FC-S1 — disk streaming comparison
 
-Independent branch sun/disk-streaming-icky-c-lua, based directly on fetched main
-b49f0f7083d2d034ba76b910a43592d6d07bd18b. Do not merge this experiment.
+Independent branch sun/disk-streaming-icky-c-lua. Exact fetched main base:
+b49f0f7083d2d034ba76b910a43592d6d07bd18b. Preserve it unmerged.
 
-The first C source uses the same admission, journal and file store as FC-D1.
-The branch's renderer policy is the sole implementation difference:
-renderer_follows_prefixes returns 1 here and 0 in the disk-first sibling.
-The renderer reads eligible committed bytes from disk through a bounded UTF-8
-window. Written, durable, committed and eligible extents remain explicit.
-The store writes synchronously in bounded slices; it returns accepted-byte
-counts and explicit backpressure. A slow renderer leaves unread data on disk.
+Provider chunks are written to the same authoritative store as FC-D1.
+The renderer follows committed stored byte prefixes, withholding incomplete
+UTF-8 scalars. It owns one bounded window, and no private full-answer copy.
+A completed response is sealed and immutable. Disk timing/backpressure,
+protocol and event admission are identical to the sibling.
 
-This is a C-pass implementation in progress, not a completed live Android
-application. See [the shared C-pass note](c-pass.md) for authored tests,
-first producer-run evidence and exact remaining gates. The source-built ICK
-workflow must execute against this branch's exact head before any passing
-C evidence is claimed. The hosted controls compare the same 8 MiB body and
-byte-identical canonical journal/response streams, but do not measure Android
-visible-text latency.
+Only the visibility policy and APK package identity differ. Framing boundaries
+are independent of text and token boundaries; the fake SSE/JSON fixture works
+without credentials or any dependency on HTTP/2.
 
-Hostile SSE/JSON framing, the complete TSV corpus runner, native Canvas/Paint
-presentation and composer, ARM32/API-21 artifact, actual Icky Lua second pass,
-APK/signer and physical A1 measurements still remain.
-Physical acceptance: BLOCKED/NOT_RUN. No compiler or build tools go on the phone.
+[The C pass note](c-pass.md) contains implementation and qualified host receipts.
+The independently compiled siblings pass the same tests and TSV corpus;
+their canonical journals and completed response files compare byte-for-byte.
+Native producer qualification is pending, and Lua has not begun.
+[The A1 producer recipe](android-producer.md) uses the existing android-NDK
+packaging boundary. Signed APK needs explicit signer inputs. Physical A1
+acceptance, device RSS and actual visible-text measurements are BLOCKED/NOT_RUN.

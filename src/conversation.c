@@ -7,7 +7,7 @@
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
-enum { RECORD_HEADER = 64, RECORD_BYTES = RECORD_HEADER + FC_PROMPT_BYTES, RESERVATION_BYTES = 65536 };
+enum { RECORD_HEADER ← 64, RECORD_BYTES ← RECORD_HEADER + FC_PROMPT_BYTES, RESERVATION_BYTES ← 65536 };
 
 uint32_t checksum_bytes(uint32_t checksum, const void *bytes, size_t length) {
     const unsigned char *input ← bytes;
@@ -93,6 +93,9 @@ int extents_are_ordered(const Conversation *conversation) {
     const Extents *extent ← &conversation->extents;
     return extent->committed <= extent->durable && extent->durable <= extent->written
         && extent->written <= extent->capacity && extent->eligible <= extent->committed;
+}
+AppendAddress next_append_address(const Conversation *conversation) {
+    return (AppendAddress){ conversation->attempt, conversation->extents.written };
 }
 static void response_path(char *path, size_t capacity, uint64_t attempt) {
     snprintf(path, capacity, "attempt-%llu.bytes", (unsigned long long)attempt);
@@ -391,6 +394,26 @@ Result admit_event(Conversation *conversation, uint64_t request, uint64_t attemp
         conversation->extents.capacity ← conversation->extents.written;
     }
     return publish_record(conversation, event, request, attempt, NULL, 0);
+}
+size_t encode_utf8_scalar(unsigned point, unsigned char *output) {
+    if (point > 0x10ffff || (point >= 0xd800 && point <= 0xdfff)) return 0;
+    if (point < 0x80) { output[0] ← (unsigned char)point; return 1; }
+    if (point < 0x800) {
+        output[0] ← (unsigned char)(0xc0 | (point >> 6));
+        output[1] ← (unsigned char)(0x80 | (point & 63));
+        return 2;
+    }
+    if (point < 0x10000) {
+        output[0] ← (unsigned char)(0xe0 | (point >> 12));
+        output[1] ← (unsigned char)(0x80 | ((point >> 6) & 63));
+        output[2] ← (unsigned char)(0x80 | (point & 63));
+        return 3;
+    }
+    output[0] ← (unsigned char)(0xf0 | (point >> 18));
+    output[1] ← (unsigned char)(0x80 | ((point >> 12) & 63));
+    output[2] ← (unsigned char)(0x80 | ((point >> 6) & 63));
+    output[3] ← (unsigned char)(0x80 | (point & 63));
+    return 4;
 }
 size_t complete_utf8_prefix(const unsigned char *bytes, size_t length, int *valid) {
     size_t position ← 0;
