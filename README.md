@@ -8,6 +8,14 @@ The use case is simple: put a fast, low-overhead interface on a very cheap Andro
 
 The feature set and Android process model are **not frozen**.
 
+The [FC-U1 native candidate](notes/native-candidate.md) converges durable disk
+streaming, a shared response arena, the executable Idriç lifecycle and bounded
+HTTP/2 beneath one application boundary. Its deterministic backend remains
+available for credential-free acceptance. The candidate's hosted gates produce
+an exact-source, public-test-signed A1 APK; physical and live-account acceptance
+remain NOT_RUN. Authoritative A1/C67 paired production is blocked by the shared
+route's missing predecessor closure, recorded in that note.
+
 A couple of ChatGPT clones are not enough evidence for either one, and source review cannot replace physical observation. In particular, the Shizuku/runtime inventory of the current ChatGPT app on the target phones is not complete yet, so FastChat must not assume that the processes, services, WebView/renderer behavior, media paths, background work, or lifecycle boundaries already identified are the whole set.
 
 Implementation preferences — including small native code, C built through ICK where appropriate, D experiments, and Idriç type sketches — do not substitute for requirements discovery.

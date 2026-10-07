@@ -1,6 +1,13 @@
 # Stable public comparison signer
 
-These two experimental package IDs are independent:
+The FC-U1 native candidate retains the arena application's existing package ID
+`org.isomorphisms.fastchat.diskstreaming.arena`, with versionCode 4 and
+versionName `0.4-candidate`. It uses the same persistent public certificate
+below. Its pinned generic packager uses source-epoch APK v2+ signing for the
+API 26 candidate. Hosted packaging is separate from physical replacement
+installation, which remains NOT_RUN.
+
+The earlier two experimental package IDs are independent:
 `org.isomorphisms.fastchat.diskfirst` and
 `org.isomorphisms.fastchat.diskstreaming`. Each starts at versionCode 1 and keeps
 its ID, this certificate and a nondecreasing versionCode on later updates.

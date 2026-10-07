@@ -108,6 +108,8 @@ jobs:
           path: |
             fastchat.apk
             fastchat.receipt.tsv
+            fastchat.apk.packaging-digests.txt
+            fastchat.apk.packaging-identity.tsv
             native/native-abi.txt
             native/native-digests.txt
             native/native-sizes.txt

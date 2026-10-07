@@ -5,6 +5,17 @@ protocol libraries. Copyright/license notices are retained in `licenses/` and
 included with native artifacts. No HPACK, QPACK, QUIC, congestion-control or TLS
 implementation was authored here.
 
+The source/license inventory below comes from PR #8. The active FC-U1 native
+candidate compiles every maintained and foreign C object through ICK
+`515c0f29fe6e2e96e10495fbaf25da93532e7722`, uses Icky Lua
+`87306483cec50f8c750a22dda1d0742246fad756`, and uses NDK r29 for platform
+headers/archive tools/linking at API 26. OpenSSL is built with `no-asm`.
+CMake is pinned to 4.4.0. Exact active stage identities are in
+[notes/native-candidate.md](../notes/native-candidate.md) and the producer
+artifact receipts. The NDK C compilation and older ICK evaluation described
+in the historical section below do not describe the convergence build. H3
+remains an unchanged comparison and is not compiled into this candidate.
+
 | Component | Version and exact source | License | Incorporation |
 | --- | --- | --- | --- |
 | curl | 8.20.0; `a05f34973e6c4bb629d018f7cb51487be1c904d8` | curl | Static HTTP client/connection-filter engine; exact local patch below. |
@@ -66,7 +77,7 @@ Client references inspected, with no copied implementation:
   unchanged same-repository core/tests from the exact reference head recorded
   in `transport/README.md`. No project license is invented for that owned code.
 
-## Toolchains and build consequences
+## Historical PR #8 toolchains and build consequences
 
 Android NDK r29 (`Pkg.Revision=29.0.14206865`) compiles and links handwritten C
 glue and the pinned native libraries. A1 uses
