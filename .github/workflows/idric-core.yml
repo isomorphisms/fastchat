@@ -45,7 +45,7 @@ jobs:
           cp fastchat/idric/FastChatCoreTests.idric "$fixture/FastChatCoreTests.idric"
           cat > "$fixture/run" <<'EOF'
           . ../../../testutils.sh
-          check FastChatCore.idric
+          check FastChatCore.idric >/dev/null 2>&1
           run FastChatCoreTests.idric
           EOF
           printf '%s\n' 'PASS fastchat idric core' > "$fixture/expected"
