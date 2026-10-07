@@ -11,16 +11,21 @@ var options = ARGV[4:]
 mkdir -p "$output"
 # The parent invokes the verified Grease runtime; preserve it across child recipes.
 var runtime = ENV.FC_GREASE
-proc qualify(name, expression, diagnostic) {
+proc qualify(name, expression, diagnostic, selection) {
   var mutant = "$output/$name"
   mkdir -p "$mutant"
   cp -a "$repository/src" "$repository/scripts" "$repository/tests" "$repository/third-party" "$repository/policy" "$repository/transport" "$mutant/"
   sed "$expression" "$repository/src/conversation.c" > "$mutant/src/conversation.c"
-  "$runtime" "$mutant/scripts/test-core.grease" "$compiler" "$support" "$lua" "$mutant/test" @options > "$mutant/build.log" 2>&1
-  if "$mutant/test" > "$mutant/result.log" 2>&1 { echo "FAIL surviving mutation $name"; exit 1 }
+  if ! "$runtime" "$mutant/scripts/test-core.grease" "$compiler" "$support" "$lua" "$mutant/test" @options > "$mutant/build.log" 2>&1 {
+    cat "$mutant/build.log"; echo "FAIL mutation build $name"; exit 1
+  }
+  var arguments = []
+  if (selection !== '') { setvar arguments = [selection] }
+  if "$mutant/test" @arguments > "$mutant/result.log" 2>&1 { echo "FAIL surviving mutation $name"; exit 1 }
   rg -Fq "$diagnostic" "$mutant/result.log"
   echo "PASS rejected $name: $diagnostic"
 }
-qualify retry 's/if (publish_record(conversation, event,/if (event != RETRY \&\& publish_record(conversation, event,/' 'FAIL missing canonical retry_requested before transport_attempt_submitted'
-qualify response-fsync 's/if (durability_barrier(conversation, conversation->response) != FC_OK) return FC_STORAGE_ERROR;/\/\* mutation: omitted response barrier \*\//' 'conversation.extents.durable == (stage ? 22u : 0u)'
-qualify response-crc 's/if (checksum != expected) return FC_CORRUPT;/(void)expected;/' 'conversation_open(&conversation, path) == FC_CORRUPT'
+qualify retry 's/if (publish_record(conversation, event,/if (event != RETRY \&\& publish_record(conversation, event,/' 'FAIL missing canonical retry_requested before transport_attempt_submitted' ''
+qualify response-fsync 's/if (durability_barrier(conversation, conversation->response) != FC_OK) return FC_STORAGE_ERROR;/\/\* mutation: omitted response barrier \*\//' 'conversation.extents.durable == (stage ? 22u : 0u)' ''
+qualify response-crc 's/if (checksum != expected) return FC_CORRUPT;/(void)expected;/' 'conversation_open(&conversation, path) == FC_CORRUPT' ''
+qualify arena-reuse 's/conversation->response_base ← conversation->arena_high_water;/conversation->response_base ← 0;/' 'conversation.response_base == first_end' '--arena-reuse'

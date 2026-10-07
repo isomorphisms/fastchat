@@ -40,7 +40,7 @@ jobs:
       - name: Refresh producer package metadata
         run: sudo apt-get update
       - name: Compiler bootstrap dependencies
-        run: sudo apt-get install -y build-essential flex bison texinfo libgmp-dev libmpfr-dev libmpc-dev libisl-dev libzstd-dev
+        run: sudo apt-get install -y build-essential flex bison texinfo libgmp-dev libmpfr-dev libmpc-dev libisl-dev libzstd-dev ripgrep
       - name: Materialize owned ICK
         working-directory: compiler
         run: bash ick/materialize.sh gcc source
@@ -113,7 +113,7 @@ jobs:
           chmod +x grease/_bin/cxx-asan/ysh
           echo '7e31cd05b7a9d8fb2a4a9e003a7f3fcb0159138506d17f0fb28da8cbe22aa85c  grease/_bin/cxx-asan/ysh' | sha256sum -c -
           sudo sysctl vm.mmap_rnd_bits=28
-      - name: Targeted retry, response barrier and response checksum mutations
+      - name: Targeted retry, response barrier, checksum and arena reuse mutations
         run: >
           env ASAN_OPTIONS=detect_leaks=0 FC_GREASE="$GITHUB_WORKSPACE/grease/_bin/cxx-asan/ysh"
           grease/_bin/cxx-asan/ysh scripts/mutation-core.grease
@@ -129,6 +129,7 @@ jobs:
       - name: Canonical corpus
         run: ./core-tests corpus corpus-store
       - name: Preserve exact compiler and test evidence
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: core-${{ github.event.pull_request.head.sha || github.sha }}
@@ -139,3 +140,5 @@ jobs:
             compiler/build/gcc/xgcc
             compiler/build/gcc/cc1
             compiler/build/gcc/collect2
+            mutations/*/build.log
+            mutations/*/result.log

@@ -14,6 +14,7 @@ var ick = ARGV[5]
 var support = ARGV[6]
 var directory = $(dirname "$0")
 var repository = $(realpath "$directory/..")
+setglobal ENV.SOURCE_DATE_EPOCH = $(git -C "$repository" log -1 --format=%ct)
 var ndk_bin = "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin"
 var compiler = ick
 var compile_flags = "-B$support/ -B/usr/lib/gcc/x86_64-linux-gnu/13/ -isystem /usr/lib/gcc/x86_64-linux-gnu/13/include"

@@ -25,8 +25,13 @@ Reference arena peak RSS was 1312 KiB versus disk-first 1076 KiB; fresh replay
 was 79.643 versus 88.589 ms. These single host samples are comparisons, not
 physical predictions. The original arena's 8 MiB reservation traffic was
 omitted from its reported write counters, and its allocator allocated a 256 KiB
-temporary buffer. The candidate routes reservation through the owned 4096-byte
-writer and accounts every reservation write. Replay, monotone allocation and
+temporary buffer. A bounded zero-fill replacement was measured and rejected:
+it raised application writes from 2563 to 4612. The candidate instead uses
+`posix_fallocate` like disk-first, with a metered 4096-byte fallback only when
+kernel allocation is unsupported. Allocation calls/bytes are reported separately
+from application writes. A fresh 8 MiB sample used 1072 KiB peak RSS, 2564 writes
+(one extra canonical attempt record), 4096-byte maximum reads/writes, 0.206 ms
+first visibility and 87.193 ms replay. Replay, monotone allocation and
 reserved-tail reuse remain the reason to retain it. No reduced flash-write
 claim is made. Physical flash writes and physical RSS/latency are NOT_RUN.
 
@@ -94,6 +99,12 @@ and https://developers.openai.com/api/docs/guides/streaming-responses.
 ## Producer identity
 
 The existing A1 producer and generic android-NDK packager remain the route.
+The generic packager's pinned repair (android-NDK PR #17) normalizes payload
+timestamps using the source commit epoch, sorts assets and uses APK v2+ signing
+for this API 26 candidate. The hosted gate repeats native compilation and
+packaging and compares exact library/APK bytes; dependency build dates use the
+same source epoch. This is qualification through the maintained recipes,
+not a second producer or a whole-path physical reproducibility claim.
 Package `org.isomorphisms.fastchat.diskstreaming.arena`, versionCode 4,
 versionName `0.4-candidate`, API 26 minimum / 34 target, armeabi-v7a, NativeActivity,
 no application DEX. The public development signer certificate remains
@@ -111,7 +122,7 @@ It is not a production/store signer.
 | Grease implementation | ba869518c7d850de6c47d8c6234654575e264e6c; run 37478624499 / artifact 11419719229; runtime SHA256 7e31cd05b7a9d8fb2a4a9e003a7f3fcb0159138506d17f0fb28da8cbe22aa85c |
 | NDK | r29 / 29.0.14206865; ld.lld/LLVM 21 platform link, Bionic CRT and ARM compiler helper archive |
 | GNU ARM assembler | Ubuntu binutils-arm-linux-gnueabi 2.42; explicit compiler/as binding |
-| Packager | isomorphisms/android-NDK 7c61ee43e75f7c2dab9288edb0e10055898b36e6; apk/build-nativeactivity-apk.sh |
+| Packager | isomorphisms/android-NDK 3063c9a4345c8d7a7c434c66a13c3fdc10023645; maintained apk/build-nativeactivity-apk.sh, source-epoch reproducibility opt-in |
 | Build-tools/platform | Android build-tools 34.0.0 / android-34; aapt2, zipalign, apksigner |
 | Foreign generator | CMake 4.4.0; pinned curl/OpenSSL/nghttp2 in transport/DEPENDENCIES.md |
 

@@ -68,7 +68,7 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           repository: isomorphisms/android-NDK
-          ref: 7c61ee43e75f7c2dab9288edb0e10055898b36e6
+          ref: 3063c9a4345c8d7a7c434c66a13c3fdc10023645
           path: packaging
           persist-credentials: false
       - name: Producer SDK
@@ -91,13 +91,15 @@ jobs:
         run: >
           grease/_bin/cxx-asan/ysh scripts/build-native.grease
           compiler/xgcc compiler "$ANDROID_HOME/ndk/29.0.14206865" icky-lua native "$GITHUB_WORKSPACE/http2/prefix"
-      - name: Stable signer APK packaging
+      - name: Repeat native production and stable signer packaging
         run: >
           env ANDROID_BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
           ANDROID_KEYSTORE="$GITHUB_WORKSPACE/android/signing/fastchat-comparison-dev.jks"
           ANDROID_SOURCE_COMMIT="${{ github.event.pull_request.head.sha || github.sha }}"
-          grease/_bin/cxx-asan/ysh scripts/package-native.grease
-          packaging native/libfastchat.so fastchat.apk
+          FC_GREASE="$GITHUB_WORKSPACE/grease/_bin/cxx-asan/ysh"
+          grease/_bin/cxx-asan/ysh scripts/qualify-reproducibility.grease
+          compiler/xgcc compiler "$ANDROID_HOME/ndk/29.0.14206865" icky-lua "$GITHUB_WORKSPACE/http2/prefix"
+          packaging native/libfastchat.so native-repeat fastchat.apk
       - name: Preserve stripped artifact and producer receipts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -115,3 +117,4 @@ jobs:
             http2/foreign-compiler.txt
             http2/foreign-digests.txt
             http2/ick-platform.cmake
+            native-repeat/reproducibility-digests.txt

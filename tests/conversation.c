@@ -160,6 +160,9 @@ static void arena_reuse_case(void) {
     uint64_t reserve_calls ← conversation.measurements.reserve_calls;
     assert(arena_capacity > first_end);
     assert(reserve_calls > 0);
+    assert(conversation.measurements.allocation_bytes == arena_capacity);
+    assert(conversation.measurements.allocation_calls > 0);
+    assert(conversation.measurements.reserve_bytes == 0);
 
     assert(submit_text(&conversation, "again", 5) == FC_OK);
     assert(admit_event(&conversation, conversation.request,
@@ -264,6 +267,7 @@ static void arena_hostile_cases(void) {
         remove_directory(path);
     }
     fresh_conversation(&conversation, path);
+    conversation.force_reservation_writes ← 1;
     conversation.write_budget ← 3;
     WriteResult exhausted ← store_response_bytes(&conversation, conversation.request, conversation.attempt, "x", 1);
     assert(exhausted.result == FC_STORAGE_ERROR && exhausted.consumed == 0);
@@ -767,6 +771,11 @@ static int benchmark_response(const char *mode, const char *path) {
                (unsigned long long)measurements.write_count, measurements.maximum_write, measurements.maximum_view,
                first_visible * 1000, first_final * 1000, drain_latency * 1000,
                generating_cpu * 1000, replay_time * 1000, displayed_crc);
+        printf("allocation_bytes\t%llu\nallocation_calls\t%llu\nfallback_reserve_bytes\t%llu\nfallback_reserve_writes\t%llu\n",
+               (unsigned long long)measurements.allocation_bytes,
+               (unsigned long long)measurements.allocation_calls,
+               (unsigned long long)measurements.reserve_bytes,
+               (unsigned long long)measurements.reserve_writes);
     }
     return 0;
 }
@@ -1062,6 +1071,7 @@ static void giant_framed_offer_case(void) {
 }
 
 int main(int argc, char **argv) {
+    if (argc == 2 && strcmp(argv[1], "--arena-reuse") == 0) { arena_reuse_case(); return 0; }
     if (argc == 3 && strcmp(argv[1], "replay") == 0) return fresh_process_replay(argv[2]);
     if (argc == 3 && strcmp(argv[1], "corpus") == 0) return comparison_corpus(argv[2]);
     if (argc == 4 && strcmp(argv[1], "benchmark") == 0)

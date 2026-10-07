@@ -12,6 +12,7 @@ typedef struct { uint64_t capacity, written, durable, committed, received, eligi
 typedef struct {
     uint64_t data_bytes, journal_bytes, write_count, barrier_count;
     uint64_t reserve_bytes, reserve_calls, reserve_writes;
+    uint64_t allocation_bytes, allocation_calls;
     size_t maximum_write, maximum_view;
 } StoreMeasurements;
 typedef struct {
@@ -32,6 +33,7 @@ typedef struct {
     size_t short_write;
     int fail_barrier, would_block, fail_barrier_after;
     int crash_at; /* Hosted fault build only: 1 write, 2 response sync, 3 journal write, 4 journal sync. */
+    int force_reservation_writes;
 } Conversation;
 Result conversation_open(Conversation *conversation, const char *directory);
 void conversation_close(Conversation *conversation);

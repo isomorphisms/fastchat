@@ -28,10 +28,13 @@ do not change.
 
 ## Reservation and reuse
 
-The candidate grows the arena in 64 KiB quanta through its owned bounded writer.
+The candidate grows the arena in 64 KiB quanta through `posix_fallocate`, the
+same kernel allocation API used by the disk-first reference. Allocation calls
+and bytes are measured separately from application writes. Only an unsupported
+allocation API (ENOSYS/EOPNOTSUPP) falls back to the owned bounded zero writer.
 The vendored allocator's original 256 KiB scratch buffer and unmetered pwrite
 path are not called. Reservation writes are at most 4096 bytes and count toward
-write_count, reserve_bytes and reserve_writes. Growth zero-fills only the new
+write_count, reserve_bytes and reserve_writes. Fallback growth zero-fills only the new
 reserved tail. Completion does not truncate the arena. The next attempt starts
 at the previous high-water mark and consumes any remaining reserved capacity
 before another growth operation.
@@ -54,7 +57,8 @@ the recovered high-water mark.
 ## Evidence boundary
 
 Host tests require reserved-tail reuse across two attempts and fresh-process
-replay. Android logs report reserve bytes/calls plus arena capacity/high-water.
+replay, including a targeted allocator-reset mutation. Android logs report
+allocation and fallback reservation bytes/calls plus arena capacity/high-water.
 
 This experiment does not yet establish that explicit zero-fill reservation
 reduces physical flash writes or improves latency on either MIRO phone. That is

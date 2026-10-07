@@ -14,7 +14,8 @@ test -f "$packaging/apk/build-nativeactivity-apk.sh"
 var source_commit = ENV.ANDROID_SOURCE_COMMIT
 test $(git -C "$repository" rev-parse HEAD) = "$source_commit"
 git -C "$repository" diff --quiet HEAD -- android third-party scripts/package-native.grease
-test $(git -C "$packaging" rev-parse HEAD) = 7c61ee43e75f7c2dab9288edb0e10055898b36e6
+test $(git -C "$packaging" rev-parse HEAD) = 3063c9a4345c8d7a7c434c66a13c3fdc10023645
 git -C "$packaging" diff --quiet HEAD -- apk/build-nativeactivity-apk.sh
 # The maintained foreign packager is Bash source (not executable in its tree).
-env "ANDROID_ASSET_DIR=$repository/third-party" bash "$packaging/apk/build-nativeactivity-apk.sh" "$repository/android/AndroidManifest.xml" "$native" armeabi-v7a "$output"
+var epoch = $(git -C "$repository" log -1 --format=%ct)
+env "SOURCE_DATE_EPOCH=$epoch" "ANDROID_ASSET_DIR=$repository/third-party" bash "$packaging/apk/build-nativeactivity-apk.sh" "$repository/android/AndroidManifest.xml" "$native" armeabi-v7a "$output"

@@ -441,6 +441,19 @@ static Result reserve_response_tail(Conversation *conversation, uint64_t require
     uint64_t target ← ((required + RESERVATION_BYTES - 1) / RESERVATION_BYTES) * RESERVATION_BYTES;
     unsigned char zeroes[FC_WRITE_BYTES] ← {0};
     conversation->measurements.reserve_calls ← conversation->measurements.reserve_calls + 1;
+    if (conversation->would_block) return FC_BACKPRESSURE;
+    if (!conversation->force_reservation_writes) {
+        uint64_t growth ← target - conversation->arena_capacity;
+        int result ← posix_fallocate(conversation->response, (off_t)conversation->arena_capacity, (off_t)growth);
+        if (result == 0) {
+            conversation->arena_capacity ← target;
+            conversation->extents.capacity ← target - conversation->response_base;
+            conversation->measurements.allocation_calls ← conversation->measurements.allocation_calls + 1;
+            conversation->measurements.allocation_bytes ← conversation->measurements.allocation_bytes + growth;
+            return FC_OK;
+        }
+        if (result != EOPNOTSUPP && result != ENOSYS) return storage_failure(conversation);
+    }
     /* The reference allocator used 256 KiB temporary RAM and unmetered writes.
        Keep the arena layout, but route reservation through the bounded writer. */
     while (conversation->arena_capacity < target) {
