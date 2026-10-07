@@ -47,8 +47,9 @@ test $(git -C "$sources/nghttp2" rev-parse HEAD) = 49908f992027821912b96a13898b6
 git -C "$sources/openssl" diff --exit-code
 git -C "$sources/nghttp2" diff --exit-code
 mkdir -p "$output/prefix" "$output/openssl"
-git -C "$sources/curl" diff > "$output/curl.patch"
-cmp "$output/curl.patch" "$repository/_/transport/curl-small-windows.patch"
+git -C "$sources/curl" diff --no-ext-diff --no-color --no-renames | sed '/^index /d' > "$output/curl.patch"
+sed '/^index /d' "$repository/_/transport/curl-small-windows.patch" > "$output/curl-expected.patch"
+cmp "$output/curl.patch" "$output/curl-expected.patch"
 var prefix = "$output/prefix"
 setglobal ENV.ANDROID_NDK_ROOT = ndk
 setglobal ENV.PATH = ndk_bin ++ ':' ++ ENV.PATH
