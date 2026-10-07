@@ -57,8 +57,10 @@ another phone is represented by this build.
 | A1 sockets/connections | BLOCKED/NOT_RUN. |
 | Native Idriç ARM/Thumb adapter/core execution | BLOCKED/NOT_RUN; actual typed-core run uses host Chez. |
 
-The native runtime archive and digest are published alongside this branch's
-evidence. They contain the DSO, executable, licenses and exact build receipt;
+The [native runtime archive](a1/fastchat-http2-a1.tar.gz),
+[digest](a1/archive.sha256) and [receipt](a1/receipt.tsv) are published alongside this branch's
+evidence. Source commit: `86f2b6655c2df879d19d4cf8ddec3da3945553cf`.
+They contain the DSO, executable, licenses and exact build receipt;
 they contain no source compiler, device build instructions or production tokens.
 An artifact build/ELF inspection does not establish installation or device
 execution. Cat Food's `62ac940588f5ee4c5be468d48e38d74514da3757` A1 IB observation
