@@ -1,0 +1,56 @@
+name: FastChat Icky C core
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Exact FastChat head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Pinned ICK source and immutable GCC reference
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: dilapidated-shed/ick
+          ref: 14f582c920af18ec20eb5fad2583926e0560b3f5
+          path: compiler
+          submodules: true
+          persist-credentials: false
+      - name: Refresh producer package metadata
+        run: sudo apt-get update
+      - name: Compiler bootstrap dependencies (producer only)
+        run: sudo apt-get install -y build-essential flex bison texinfo libgmp-dev libmpfr-dev libmpc-dev libisl-dev libzstd-dev
+      - name: Materialize owned ICK
+        working-directory: compiler
+        run: bash ick/materialize.sh gcc source
+      - name: Create build directory
+        run: mkdir compiler/build
+      - name: Configure ICK host test compiler
+        working-directory: compiler/build
+        run: >
+          ../source/configure --target=x86_64-linux-gnu
+          --with-as=/usr/bin/as --with-ld=/usr/bin/ld
+          --enable-languages=c --disable-bootstrap --disable-multilib
+          --disable-nls --disable-shared --disable-threads --without-headers
+          --disable-libatomic --disable-libgomp --disable-libquadmath
+          --disable-libssp --disable-libvtv
+      - name: Build ICK (system GCC bootstraps the compiler only)
+        run: make -C compiler/build -j2 all-gcc
+      - name: Compile actual Icky C application/test source
+        run: >
+          compiler/build/gcc/xgcc -Bcompiler/build/gcc/
+          -B/usr/lib/gcc/x86_64-linux-gnu/13/
+          -isystem /usr/include -isystem /usr/include/x86_64-linux-gnu
+          -L/usr/lib/gcc/x86_64-linux-gnu/13/ -L/usr/lib/x86_64-linux-gnu/
+          -std=c11 -D_FILE_OFFSET_BITS=64 -O2 -Wall -Wextra -Werror
+          -Isrc src/conversation.c tests/conversation.c -static -o core-tests
+      - name: Execute disk, RAM control, fault and replay cases on host
+        run: ./core-tests
+      - name: Source and executable identity
+        run: sha256sum src/conversation.c src/conversation.h tests/conversation.c core-tests
