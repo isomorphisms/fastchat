@@ -37,11 +37,10 @@ WriteResult store_response_bytes(Conversation *conversation, uint64_t request,
                                  uint64_t attempt, const void *bytes, size_t length);
 Result commit_stored_prefix(Conversation *conversation);
 int extents_are_ordered(const Conversation *conversation);
-AppendAddress next_append_address(const Conversation *conversation);
+AppendAddress response_append_address(const Conversation *conversation);
 Result read_response_window(Conversation *conversation, uint64_t offset, int streaming,
                             unsigned char *bytes, size_t capacity, size_t *length);
 const char *phase_name(Phase phase);
 uint32_t checksum_bytes(uint32_t checksum, const void *bytes, size_t length);
 size_t complete_utf8_prefix(const unsigned char *bytes, size_t length, int *valid);
-size_t encode_utf8_scalar(unsigned codepoint, unsigned char *output);
 #endif

@@ -1,0 +1,2 @@
+mode	peak_rss_kib	steady_rss_kib	response_bytes	data_bytes	journal_bytes	writes	max_write	max_view	first_text_ms	terminal_first_window_ms	terminal_drain_ms	generation_cpu_ms	replay_ms	response_crc
+disk-first	760	716	8388608	8388608	32969	2563	4096	4096	85.459	0.022	86.370	85.317	80.261	31e202a1

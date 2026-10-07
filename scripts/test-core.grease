@@ -21,7 +21,6 @@ echo "$identity" | rg -q '\(GCC\)'
 "$compiler" "-B$support/" -std=c11 -D_FILE_OFFSET_BITS=64 -O2 -Wall -Wextra -Werror \
   "-I$repository/src" @flags "$repository/src/conversation.c" \
   "$repository/src/render_policy.c" "$repository/src/fixture_transport.c" \
-  "$repository/tests/conversation.c" \
-  -Wl,--start-group -lgcc -lgcc_eh -lc -Wl,--end-group -o "$output"
+  "$repository/tests/conversation.c" -o "$output"
 sha256sum "$output"
 echo 'Built test executable; execute with the matching host/emulation runtime.'
