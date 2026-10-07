@@ -100,7 +100,8 @@ and https://developers.openai.com/api/docs/guides/streaming-responses.
 
 The existing A1 producer and generic android-NDK packager remain the route.
 The generic packager's pinned repair (android-NDK PR #17) normalizes payload
-timestamps using the source commit epoch, sorts assets and uses APK v2+ signing
+timestamps using the source commit epoch, sorts assets, normalizes copied
+file modes, omits ZIP UID/GID extra fields and uses APK v2+ signing
 for this API 26 candidate. The hosted gate repeats native compilation and
 packaging and compares exact library/APK bytes; dependency build dates use the
 same source epoch. This is qualification through the maintained recipes,
@@ -122,7 +123,7 @@ It is not a production/store signer.
 | Grease implementation | ba869518c7d850de6c47d8c6234654575e264e6c; run 37478624499 / artifact 11419719229; runtime SHA256 7e31cd05b7a9d8fb2a4a9e003a7f3fcb0159138506d17f0fb28da8cbe22aa85c |
 | NDK | r29 / 29.0.14206865; ld.lld/LLVM 21 platform link, Bionic CRT and ARM compiler helper archive |
 | GNU ARM assembler | Ubuntu binutils-arm-linux-gnueabi 2.42; explicit compiler/as binding |
-| Packager | isomorphisms/android-NDK 3063c9a4345c8d7a7c434c66a13c3fdc10023645; maintained apk/build-nativeactivity-apk.sh, source-epoch reproducibility opt-in |
+| Packager | isomorphisms/android-NDK 32daa084390733d5b90cdec3157646832c75a3ad; maintained apk/build-nativeactivity-apk.sh, source-epoch reproducibility opt-in |
 | Build-tools/platform | Android build-tools 34.0.0 / android-34; aapt2, zipalign, apksigner |
 | Foreign generator | CMake 4.4.0; pinned curl/OpenSSL/nghttp2 in transport/DEPENDENCIES.md |
 
