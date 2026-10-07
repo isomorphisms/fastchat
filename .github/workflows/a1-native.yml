@@ -37,6 +37,10 @@ jobs:
           path: grease
       - name: Artifact executable permissions
         run: chmod +x compiler/xgcc compiler/cc1 compiler/collect2 grease/_bin/cxx-asan/ysh
+      - name: Producer search-tool package metadata
+        run: sudo apt-get update
+      - name: Producer recipe dependency
+        run: sudo apt-get install -y ripgrep
       - name: Grease producer identity
         run: sha256sum grease/_bin/cxx-asan/ysh
       - name: ASAN producer mapping compatibility
