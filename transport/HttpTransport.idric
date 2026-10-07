@@ -1,0 +1,85 @@
+module HttpTransport
+
+import Data.Text
+import FastChatCore
+
+-- Foreign-library mechanisms stay here, below FastChat's typed semantics.
+%foreign "C:fc_ffi_open,libfastchat_transport"
+primitive_open : Text → Text → Int → PrimIO AnyPtr
+%foreign "C:fc_ffi_valid,libfastchat_transport"
+primitive_valid : AnyPtr → PrimIO Int
+%foreign "C:fc_ffi_submit,libfastchat_transport"
+primitive_submit : AnyPtr → Int → Int → Text → Text → PrimIO Int
+%foreign "C:fc_ffi_cancel,libfastchat_transport"
+primitive_cancel : AnyPtr → Int → Int → PrimIO Int
+%foreign "C:fc_step,libfastchat_transport"
+primitive_step : AnyPtr → Int → PrimIO Int
+%foreign "C:fc_ffi_next,libfastchat_transport"
+primitive_next : AnyPtr → PrimIO Int
+%foreign "C:fc_ffi_request,libfastchat_transport"
+primitive_request : AnyPtr → PrimIO Int
+%foreign "C:fc_ffi_attempt,libfastchat_transport"
+primitive_attempt : AnyPtr → PrimIO Int
+%foreign "C:fc_ffi_text,libfastchat_transport"
+primitive_text : AnyPtr → PrimIO Text
+%foreign "C:fc_ffi_close,libfastchat_transport"
+primitive_close : AnyPtr → PrimIO ()
+
+export
+choice transport_session one_of
+  session_handle AnyPtr
+
+-- Configuration belongs to transport authority, never the core or renderer.
+export
+open_transport : Text → Text → Int → IO (Maybe transport_session)
+open_transport origin trust_file protocol = do
+  handle ← primIO (primitive_open origin trust_file protocol)
+  valid ← primIO (primitive_valid handle)
+  pure (if valid ≟ 1 then Just (session_handle handle) else Nothing)
+
+fits_foreign_identity : Number → Bool
+fits_foreign_identity value = value > 0 && value <= 2147483647
+
+export
+submit_to_transport : transport_session → model_request → Text → Text → IO Bool
+submit_to_transport (session_handle handle)
+  (send_to _ _ (request request_number) (attempt attempt_number) _) path provider_body =
+    if not (fits_foreign_identity request_number && fits_foreign_identity attempt_number)
+      then pure False
+      else do
+        result ← primIO (primitive_submit handle (cast request_number) (cast attempt_number) path provider_body)
+        pure (result ≟ 0)
+
+export
+cancel_transport_attempt : transport_session → request_id → attempt_id → IO Bool
+cancel_transport_attempt (session_handle handle) (request request_number) (attempt attempt_number) =
+  if not (fits_foreign_identity request_number && fits_foreign_identity attempt_number)
+    then pure False
+    else do
+      result ← primIO (primitive_cancel handle (cast request_number) (cast attempt_number))
+      pure (result ≟ 0)
+
+understand_event : Int → request_id → attempt_id → Text → Maybe model_event
+understand_event 1 request_key attempt_key _ = Just (response_started request_key attempt_key)
+understand_event 2 request_key attempt_key text = Just (response_chunk request_key attempt_key text)
+understand_event 3 request_key attempt_key _ = Just (response_completed request_key attempt_key)
+understand_event 4 request_key attempt_key _ = Just (response_cancelled request_key attempt_key)
+understand_event 5 request_key attempt_key _ = Just (response_failed request_key attempt_key "invalid or oversized HTTP/provider response")
+understand_event 6 request_key attempt_key _ = Just (response_connection_lost request_key attempt_key "remote acceptance/completion cannot be known")
+understand_event _ _ _ _ = Nothing
+
+export
+observe_transport : transport_session → IO (Maybe model_event)
+observe_transport (session_handle handle) = do
+  progress ← primIO (primitive_step handle 5)
+  if not (progress ≟ 0) then pure Nothing else do
+    kind ← primIO (primitive_next handle)
+    if kind ≟ 0 then pure Nothing else do
+      request_number ← primIO (primitive_request handle)
+      attempt_number ← primIO (primitive_attempt handle)
+      text ← primIO (primitive_text handle)
+      pure (understand_event kind (request (cast request_number)) (attempt (cast attempt_number)) text)
+
+export
+close_transport : transport_session → IO ()
+close_transport (session_handle handle) = primIO (primitive_close handle)

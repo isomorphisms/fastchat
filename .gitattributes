@@ -1,0 +1,9 @@
+# Preserve exact upstream notices, unified patches and raw diagnostic/TSV data.
+# Authored source and documentation retain normal whitespace checks.
+transport/licenses/** -whitespace
+transport/fixture-licenses/** -whitespace
+evidence/**/*.tsv -whitespace
+evidence/**/*.log -whitespace
+evidence/**/elf.txt -whitespace
+evidence/**/idric-capability-probe.txt -whitespace
+_/transport/*.patch -whitespace
