@@ -1,0 +1,23 @@
+#!/usr/bin/env grease
+# Producer-only; run from any directory.
+set -eu -o pipefail
+if (len(ARGV) < 3) {
+  echo 'usage: test-core.grease ICK_DRIVER ICK_LIBEXEC OUTPUT [compile/link options...]'
+  exit 2
+}
+var compiler = ARGV[0]
+var support = ARGV[1]
+var output = ARGV[2]
+var flags = ARGV[3:]
+var repository = "$(cd "$(dirname "$0")/.." && pwd)"
+test -x "$compiler"
+test -d "$support"
+mkdir -p "$(dirname "$output")"
+var identity = $("$compiler" --version)
+echo "$identity" | rg -q '\(GCC\)'
+# The arrow source itself rejects ordinary GCC; there is no replacement path.
+"$compiler" "-B$support/" -std=c11 -D_FILE_OFFSET_BITS=64 -O2 -Wall -Wextra -Werror \
+  "-I$repository/src" @flags "$repository/src/conversation.c" \
+  "$repository/tests/conversation.c" -o "$output"
+sha256sum "$output"
+echo 'Built test executable; execute with the matching host/emulation runtime.'
