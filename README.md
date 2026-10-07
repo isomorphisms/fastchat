@@ -14,6 +14,10 @@ Implementation preferences — including small native code, C built through ICK 
 
 See [reference-code/](reference-code/) for the curated reference map and [the dated broad GitHub sweep](reference-code/sweep-2026-10-06.md). The sweep is intentionally wider than the code FastChat is likely to use.
 
+The independent [Compose Material 3 comparison baseline](android-material3/README.md)
+uses deterministic transport and disk-first durable response replay. It remains
+a draft comparison lane pending physical MIRO A1 qualification.
+
 The reference target is the **MIRO A1**, an Android 14 Go phone in roughly the $60 class.
 
 [Buy the MIRO A1 on Amazon — affiliate link](https://www.amazon.com/dp/B0FJX2FTZF?tag=macguyver03-20)

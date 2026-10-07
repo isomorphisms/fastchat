@@ -1,0 +1,12 @@
+metric	unit	Material3_MIRO_A1	native_Icky_C_MIRO_A1	native_Lua_MIRO_A1	evidence
+apk_bytes	bytes	1042096	NOT_AVAILABLE	NOT_AVAILABLE	Verified host package bytes; digest in exact-head artifact receipt; physical install separate
+cold_launch_to_usable_composer	ms	NOT_RUN	NOT_RUN	NOT_RUN	Same A1 instance, exact APK, repeated cold starts
+idle_rss	KiB	NOT_RUN	NOT_RUN	NOT_RUN	Actual A1 process RSS, same idle interval
+long_thread_rss	KiB	NOT_RUN	NOT_RUN	NOT_RUN	Fixtures.longThread 500 requests / 1000 rows
+response_updates_cpu	CPU_ms	NOT_RUN	NOT_RUN	NOT_RUN	Fixtures.response, disk-first projection
+scrolling_cpu	CPU_ms	NOT_RUN	NOT_RUN	NOT_RUN	Same long thread, same gesture duration
+frame_jank	frames_or_percent	NOT_RUN	NOT_RUN	NOT_RUN	Actual A1 frames; record refresh rate and collection method
+input_ime_cursor_selection_copy	PASS_FAIL	NOT_RUN	NOT_RUN	NOT_RUN	Actual A1 keyboard/IME, Unicode corpus, selection/copy
+rotation_recreation	PASS_FAIL	NOT_RUN	NOT_RUN	NOT_RUN	Draft/cursor/list and request lifetime
+process_death_replay	ms_and_PASS_FAIL	NOT_RUN	NOT_RUN	NOT_RUN	Completed replay and active-attempt uncertainty
+host_build_time	seconds	77	NOT_AVAILABLE	NOT_AVAILABLE	Incremental host validation build after source edits, 20 tasks executed / 85 up-to-date; see build-cost.tsv; not a cold-build benchmark
