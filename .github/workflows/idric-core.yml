@@ -1,0 +1,55 @@
+name: Idriç conversation core
+
+on:
+  pull_request:
+    paths:
+      - 'idric/**'
+      - '.github/workflows/idric-core.yml'
+  push:
+    paths:
+      - 'idric/**'
+      - '.github/workflows/idric-core.yml'
+
+concurrency:
+  group: idric-core-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-semantics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout FastChat
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          path: fastchat
+          persist-credentials: false
+
+      - name: Checkout pinned Idriç compiler
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: isomorphisms/Idric
+          ref: ff4d852862a3942592f8ade9afde8d409d9803be
+          path: Idric
+          persist-credentials: false
+
+      - name: Bootstrap pinned Idriç
+        working-directory: Idric
+        run: ./edric bootstrap
+
+      - name: Stage FastChat sources in the Idriç acceptance harness
+        run: |
+          set -eu
+          fixture=Idric/_/tests/idris2/basic/fastchat-core
+          mkdir -p "$fixture"
+          cp fastchat/idric/FastChatCore.idric "$fixture/FastChatCore.idric"
+          cp fastchat/idric/FastChatCoreTests.idric "$fixture/FastChatCoreTests.idric"
+          cat > "$fixture/run" <<'EOF'
+          . ../../../testutils.sh
+          check FastChatCore.idric >/dev/null 2>&1
+          run FastChatCoreTests.idric
+          EOF
+          printf '%s\n' 'PASS fastchat idric core' > "$fixture/expected"
+
+      - name: Typecheck and execute semantic fixtures
+        working-directory: Idric
+        run: ./edric test --only idris2/basic/fastchat-core
