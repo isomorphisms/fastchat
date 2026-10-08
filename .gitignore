@@ -1,0 +1,4 @@
+android-material3/.gradle/
+android-material3/**/build/
+android-material3/local.properties
+android-material3/.kotlin/

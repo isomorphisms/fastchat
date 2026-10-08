@@ -1,0 +1,44 @@
+name: FastChat Material 3 comparison
+on:
+  push:
+    branches: [sun/android-material3]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fastchat-m3-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  host-and-package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d
+        with:
+          gradle-version: '8.9'
+      - name: Provision SDK on the build host
+        run: sdkmanager 'platforms;android-34' 'build-tools;34.0.0'
+      - name: Host semantics, controller, UI test compilation, and signed package
+        run: gradle --no-daemon -p android-material3 :core:test :app:testDebugUnitTest :app:assembleDebugAndroidTest :app:verifyM3Apk
+      - name: Preserve exact-head package and test evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: fastchat-m3-a1-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          path: |
+            android-material3/app/build/outputs/apk/release/app-release.apk
+            android-material3/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            android-material3/app/build/reports/
+            android-material3/core/build/reports/

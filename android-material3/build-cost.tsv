@@ -1,0 +1,11 @@
+metric	value	unit	scope
+gradle_distribution_download	136114148	bytes	Gradle 8.9 zip; sha256 d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab
+gradle_distribution_expanded	151055340	bytes	Logical file sizes on disposable Linux x86_64 build host
+android_commandline_tools_download	153607504	bytes	SDK tools zip; sha256 2d2d50857e4eb553af5a6dc3ad507a17adf43d115264b1afc116f95c92e5e258
+android_sdk_installed	432288873	bytes	SDK 34, build-tools 34.0.0, platform-tools and commandline-tools; JDK excluded
+gradle_dependency_transform_cache	1168629249	bytes	Snapshot after first complete verified build, includes build plugins and test tooling; not APK or runtime memory
+first_successful_full_build	288	seconds	Partly populated cache from earlier compilation; includes remaining dependency fetches and verification-metadata generation; not a clean cold-build benchmark
+androidx_graphics_path_pre_strip	7252	bytes	Already stripped upstream ARM32 dependency
+androidx_graphics_path_packaged	7252	bytes	ELF32 ARM; no debug sections or full symbol table
+host_jdk	17.0.20	version	Existing Ubuntu OpenJDK, not downloaded by this job
+incremental_source_validation_build	77	seconds	26 host tests pass, screen tests compile, signed release validates; 20 executed / 85 up-to-date tasks; no device timing inference
