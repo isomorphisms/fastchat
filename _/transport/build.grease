@@ -49,8 +49,9 @@ if (protocol === '3') {
 }
 # Check the complete modified dependency diff, including receive-window policy.
 git -C "$sources/curl" diff --exit-code -- . ':!lib/http2.c' ':!lib/vquic/curl_ngtcp2.c' ':!lib/transfer.c'
-git -C "$sources/curl" diff > "$output/curl.patch"
-cmp "$output/curl.patch" "$root/_/transport/curl-small-windows.patch"
+git -C "$sources/curl" diff --no-ext-diff --no-color --no-renames | sed '/^index /d' > "$output/curl.patch"
+sed '/^index /d' "$root/_/transport/curl-small-windows.patch" > "$output/curl-expected.patch"
+cmp "$output/curl.patch" "$output/curl-expected.patch"
 
 cd "$output/openssl"
 env CC="$compiler" "$sources/openssl/Configure" "$openssl_target" @configure_target \

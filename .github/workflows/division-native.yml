@@ -92,4 +92,6 @@ jobs:
             ${{ runner.temp }}/native/artifacts.sha256
             ${{ runner.temp }}/native/compiler.txt
             ${{ runner.temp }}/native/elf.txt
+            ${{ runner.temp }}/native/*.relocations
+            ${{ runner.temp }}/sources/*.patch
             ${{ runner.temp }}/protocol/
