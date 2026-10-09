@@ -130,8 +130,35 @@ typed_command_boundary_test =
           _ ⇒ False
     _ ⇒ False
 
+retry_event_order_test : Bool
+retry_event_order_test =
+  case submit_request "retry order" (empty_core (authority 1) (conversation 1)) of
+    submitted_request sent request_key old_attempt outbound ⇒
+      let lost = run_transport_events (simulate_loss_after_chunk outbound) sent in
+      case retry_request request_key lost of
+        retry_rejected _ _ ⇒ False
+        retry_started retried fresh_attempt _ ⇒
+          case read_log (after_sequence 5) (core_log retried) of
+            read_events _
+              [ stored 6 (retry_requested retry_key)
+              , stored 7 (transport_attempt_submitted transport_key submitted_attempt)
+              ] ⇒ same_request request_key retry_key &&
+                   same_request retry_key transport_key &&
+                   same_attempt fresh_attempt submitted_attempt &&
+                   not (same_attempt old_attempt fresh_attempt)
+            _ ⇒ False
+
 all_tests : Bool
 all_tests =
+  native_transition_mask 0 ≟ 0 &&
+  native_transition_mask 1 ≟ 420 &&
+  native_transition_mask 2 ≟ 2552 &&
+  native_transition_mask 3 ≟ 2524 &&
+  native_transition_mask 4 ≟ 0 &&
+  native_transition_mask 5 ≟ 0 &&
+  native_transition_mask 6 ≟ 0 &&
+  native_transition_mask 7 ≟ 0 &&
+  retry_event_order_test &&
   typed_command_boundary_test &&
   two_requests_test &&
   independent_views_test &&
@@ -139,7 +166,14 @@ all_tests =
   uncertain_delivery_requires_explicit_retry_test
 
 main : IO ()
-main =
-  if all_tests
-    then putStrLn "PASS fastchat idric core"
-    else putStrLn "FAIL fastchat idric core"
+main = do
+  if not retry_event_order_test
+    then putStrLn "FAIL canonical retry_requested order"
+    else if all_tests
+      then putStrLn "PASS fastchat idric core"
+      else putStrLn "FAIL fastchat idric core"
+  putStrLn ("static const unsigned canonical_admission_masks[] ← { " ++
+    show (native_transition_mask 0) ++ ", " ++ show (native_transition_mask 1) ++ ", " ++
+    show (native_transition_mask 2) ++ ", " ++ show (native_transition_mask 3) ++ ", " ++
+    show (native_transition_mask 4) ++ ", " ++ show (native_transition_mask 5) ++ ", " ++
+    show (native_transition_mask 6) ++ ", " ++ show (native_transition_mask 7) ++ " };")

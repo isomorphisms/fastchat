@@ -1,0 +1,16 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 1) { echo 'usage: stage-idric.grease IDRIC_CHECKOUT'; exit 2 }
+var directory = $(dirname "$0")
+var repository = $(realpath "$directory/..")
+var fixture = ARGV[0] ++ '/_/tests/idris2/basic/fastchat-core'
+mkdir -p "$fixture"
+cp "$repository/idric/FastChatCore.idric" "$repository/idric/FastChatCoreTests.idric" "$fixture/"
+# The compiler's maintained test interface requires a sourced POSIX run file.
+cat > "$fixture/run" <<'EOF'
+. ../../../testutils.sh
+check FastChatCore.idric >/dev/null 2>&1
+run FastChatCoreTests.idric
+EOF
+echo 'PASS fastchat idric core' > "$fixture/expected"
+rg '^static const unsigned' "$repository/src/admission.generated.h" >> "$fixture/expected"

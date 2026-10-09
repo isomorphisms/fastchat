@@ -1,14 +1,11 @@
 name: Idriç conversation core
+permissions:
+  contents: read
+  actions: read
 
 on:
   pull_request:
-    paths:
-      - 'idric/**'
-      - '.github/workflows/idric-core.yml'
   push:
-    paths:
-      - 'idric/**'
-      - '.github/workflows/idric-core.yml'
 
 concurrency:
   group: idric-core-${{ github.event.pull_request.number || github.ref }}
@@ -21,6 +18,7 @@ jobs:
       - name: Checkout FastChat
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           path: fastchat
           persist-credentials: false
 
@@ -36,19 +34,26 @@ jobs:
         working-directory: Idric
         run: ./edric bootstrap
 
-      - name: Stage FastChat sources in the Idriç acceptance harness
+      - name: Acceptance source search dependency
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Verified Grease runtime
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          repository: dilapidated-shed/grease
+          run-id: 37478624499
+          artifact-ids: 11419719229
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: grease
+      - name: Grease identity and file mode
         run: |
-          set -eu
-          fixture=Idric/_/tests/idris2/basic/fastchat-core
-          mkdir -p "$fixture"
-          cp fastchat/idric/FastChatCore.idric "$fixture/FastChatCore.idric"
-          cp fastchat/idric/FastChatCoreTests.idric "$fixture/FastChatCoreTests.idric"
-          cat > "$fixture/run" <<'EOF'
-          . ../../../testutils.sh
-          check FastChatCore.idric >/dev/null 2>&1
-          run FastChatCoreTests.idric
-          EOF
-          printf '%s\n' 'PASS fastchat idric core' > "$fixture/expected"
+          chmod +x grease/_bin/cxx-asan/ysh
+          echo '7e31cd05b7a9d8fb2a4a9e003a7f3fcb0159138506d17f0fb28da8cbe22aa85c  grease/_bin/cxx-asan/ysh' | sha256sum -c -
+          sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Stage FastChat sources in the Idriç acceptance harness
+        run: env ASAN_OPTIONS=detect_leaks=0 grease/_bin/cxx-asan/ysh fastchat/scripts/stage-idric.grease "$GITHUB_WORKSPACE/Idric"
 
       - name: Typecheck and execute semantic fixtures
         working-directory: Idric
