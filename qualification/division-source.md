@@ -19,3 +19,8 @@ The appendFAT library is refreshed byte-for-byte from its canonical owner at `a4
 Hosted workflows bind their subsequent artifacts and source-revision receipts to
 the exact PR head. Local source/runtime acceptance does not claim those hosted
 jobs, APK installation or physical execution have already passed.
+
+The current streaming base is integrated with its exact modified-Lua gate.
+The combined arena consumer passes that gate, byte-identical embedded policy,
+unchanged linked-runtime object checks, complete core suite and actual same-version
+stock-runtime rejection. Arena allocation/reuse behavior remains unchanged.

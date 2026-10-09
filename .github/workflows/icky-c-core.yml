@@ -4,10 +4,13 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   core:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    env:
+      ASAN_OPTIONS: detect_leaks=0
     steps:
       - name: Exact FastChat head
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -19,43 +22,96 @@ jobs:
         uses: isomorphisms/ai-ci/ick-host@015cc7901ae0b3ad262b476f24e129b53c56db95
       - name: Locate the exact C frontend
         run: echo "ICK_SUPPORT=$(dirname "$("${{ steps.ick.outputs.compiler }}" -print-prog-name=cc1)")" >> "$GITHUB_ENV"
-      - name: Pinned Icky Lua runtime
+      - name: Exact shared modified-Lua qualifier
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: isomorphisms/flexible-pipes
+          ref: 5caaba31256bfb424638f8a3d4d554c56fa9a970
+          path: runtime-gate
+          persist-credentials: false
+      - name: Exact Icky Lua runtime source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           repository: isomorphisms/lua
           ref: 87306483cec50f8c750a22dda1d0742246fad756
           path: icky-lua
           persist-credentials: false
-      - name: Shared build-toolchain contract
+      - name: Same-version stock runtime counterfactual
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: isomorphisms/lua
+          ref: 0b29f408433e92953cc72b1d3e06c7ac8139e439
+          path: stock-lua
+          persist-credentials: false
+      - name: Restore exact qualified host ICK
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          repository: isomorphisms/fastchat
+          run-id: 37589849631
+          artifact-ids: 11468256648
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          path: host-ick
+      - name: Exact Grease implementation artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          repository: dilapidated-shed/grease
+          run-id: 37478624499
+          artifact-ids: 11419719229
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          path: grease-runtime
+      - name: Exact Grease packaging source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: dilapidated-shed/grease
+          ref: ba869518c7d850de6c47d8c6234654575e264e6c
+          path: grease-owner
+          persist-credentials: false
+      - name: Shared build and workflow policy
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           repository: isomorphisms/ai-ci
-          ref: 8bf8be153f792c4def251287ed85543d1fe24f07
+          ref: 01608a2493fa409463f70e8fbfd8a123ef59ee85
           path: contract
           persist-credentials: false
-      - name: Compile shared verifier through ICK
+      - name: Check Grease implementation bytes
+        run: echo '7e31cd05b7a9d8fb2a4a9e003a7f3fcb0159138506d17f0fb28da8cbe22aa85c  grease-runtime/_bin/cxx-asan/ysh' | sha256sum -c -
+      - name: Reuse unchanged Grease owner launcher (runtime packaging boundary)
+        run: sed -n '123,125p' grease-owner/phone/build-armv7-runtime.sh > grease-runtime/grease
+      - name: Install engine at owner launcher path
+        run: cp grease-runtime/_bin/cxx-asan/ysh grease-runtime/ysh
+      - name: Restore artifact executable modes
+        run: chmod +x host-ick/compiler/build/gcc/xgcc host-ick/compiler/build/gcc/cc1 host-ick/compiler/build/gcc/collect2 grease-runtime/grease grease-runtime/ysh
+      - name: Producer dependency closure
+        run: sudo apt-get install -y libgmp10 libmpfr6 libmpc3 libisl23 libzstd1 ripgrep
+      - name: Compile independent shared verifier through ICK
         run: >
-          "${{ steps.ick.outputs.compiler }}" ${{ steps.ick.outputs.link_flags }}
-          -std=c11 -O2 contract/src/aici.c -o contract-check
+          host-ick/compiler/build/gcc/xgcc -Bhost-ick/compiler/build/gcc/
+          -B/usr/lib/gcc/x86_64-linux-gnu/13/
+          -isystem /usr/lib/gcc/x86_64-linux-gnu/13/include
+          -fno-use-linker-plugin -std=c11 -O2 contract/src/aici.c -o contract-check
       - name: Required shared toolchain contract
         run: ./contract-check verify contract/contracts/build-toolchain-v0.contract.tsv .
-      - name: Compile actual Icky Lua runtime through ICK
+      - name: Compile independent workflow verifier through ICK
         run: >
-          "${{ steps.ick.outputs.compiler }}" ${{ steps.ick.outputs.link_flags }}
-          -std=c11 -O2 -DMAKE_LIB -DLUA_USE_POSIX
-          -ffunction-sections -fdata-sections -Iicky-lua
-          -c icky-lua/onelua.c -o icky-lua.o
-      - name: Compile actual arrow C
+          host-ick/compiler/build/gcc/xgcc -Bhost-ick/compiler/build/gcc/
+          -B/usr/lib/gcc/x86_64-linux-gnu/13/
+          -isystem /usr/lib/gcc/x86_64-linux-gnu/13/include
+          -fno-use-linker-plugin -std=c17 -O2 contract/src/aici_github.c -o workflow-policy-check
+      - name: Required shared workflow policy
+        run: ./workflow-policy-check verify . - public
+      - name: Qualified runtime linked into actual consumer and stock-object counterfactual
         run: >
-          "${{ steps.ick.outputs.compiler }}" ${{ steps.ick.outputs.link_flags }}
-          -std=c11 -D_FILE_OFFSET_BITS=64 -O2 -Wall -Wextra -Werror
-          -Isrc -Ithird-party/appendfat-arena -Iicky-lua -DFC_POLICY_SOURCE='"policy/composition.lua"'
-          -ffunction-sections -fdata-sections
-          src/conversation.c src/render_policy.c src/fixture_transport.c
-          third-party/appendfat-arena/appendfat_arena.c
-          tests/conversation.c icky-lua.o -Wl,--gc-sections -lm -ldl -o core-tests
-      - name: Deterministic fault, transport and replay suite
-        run: ./core-tests
+          grease-runtime/grease scripts/test-core.grease
+          "${{ steps.ick.outputs.compiler }}"
+          "${{ env.ICK_SUPPORT }}"
+          "$GITHUB_WORKSPACE/icky-lua" "$GITHUB_WORKSPACE/core-tests"
+          "$GITHUB_WORKSPACE/runtime-gate" "$GITHUB_WORKSPACE/grease-runtime/grease"
+          "$GITHUB_WORKSPACE/stock-lua"
+          "$GITHUB_WORKSPACE/host-ick/compiler/build/gcc/xgcc"
+          "$GITHUB_WORKSPACE/host-ick/compiler/build/gcc"
+          ${{ steps.ick.outputs.link_flags }}
       - name: Branch measurement
         run: ./core-tests benchmark "$(cat ci/renderer-mode)" benchmark-store
       - name: Fresh-process completed replay
@@ -64,14 +120,15 @@ jobs:
         run: ./core-tests benchmark ram unused
       - name: Canonical corpus
         run: ./core-tests corpus corpus-store
-      - name: Preserve exact compiler and test evidence
+      - name: Preserve exact consumer and qualification evidence
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: core-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             core-tests
+            core-tests.runtime/
             corpus-store
             benchmark-store
-            ${{ runner.temp }}/ick-host-stage/qualification
-            ${{ runner.temp }}/ick-host-stage/host-runtime.sha256
+          if-no-files-found: error
 
