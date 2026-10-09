@@ -14,14 +14,11 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Pinned ICK and immutable GCC reference
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          repository: dilapidated-shed/ick
-          ref: 515c0f29fe6e2e96e10495fbaf25da93532e7722
-          path: compiler
-          submodules: true
-          persist-credentials: false
+      - name: Qualified division-capable C producer
+        id: ick
+        uses: isomorphisms/ai-ci/ick-host@015cc7901ae0b3ad262b476f24e129b53c56db95
+      - name: Locate the exact C frontend
+        run: echo "ICK_SUPPORT=$(dirname "$("${{ steps.ick.outputs.compiler }}" -print-prog-name=cc1)")" >> "$GITHUB_ENV"
       - name: Pinned Icky Lua runtime
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -36,59 +33,21 @@ jobs:
           ref: 8bf8be153f792c4def251287ed85543d1fe24f07
           path: contract
           persist-credentials: false
-      - name: Refresh producer package metadata
-        run: sudo apt-get update
-      - name: Compiler bootstrap dependencies
-        run: sudo apt-get install -y build-essential flex bison texinfo libgmp-dev libmpfr-dev libmpc-dev libisl-dev libzstd-dev
-      - name: Materialize owned ICK
-        working-directory: compiler
-        run: bash ick/materialize.sh gcc source
-      - name: Build directory
-        run: mkdir -p compiler/build
-      - name: Configure host compiler
-        working-directory: compiler/build
-        run: >
-          ../source/configure --target=x86_64-linux-gnu
-          --with-as=/usr/bin/as --with-ld=/usr/bin/ld
-          --enable-languages=c --disable-bootstrap --disable-multilib
-          --disable-nls --disable-shared --disable-threads --without-headers
-          --disable-libatomic --disable-libgomp --disable-libquadmath
-          --disable-libssp --disable-libvtv --disable-libsanitizer
-      - name: Restore exact compiler
-        id: compiler-cache
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
-        with:
-          key: ick-host-ubuntu24-c-only-515c0f29fe6e2e96e10495fbaf25da93532e7722-v1
-          path: |
-            compiler/build/gcc/xgcc
-            compiler/build/gcc/cc1
-            compiler/build/gcc/collect2
-            compiler/build/gcc/include
-            compiler/build/gcc/include-fixed
-      - name: Build ICK (system GCC bootstraps only)
-        if: steps.compiler-cache.outputs.cache-hit != 'true'
-        run: make -C compiler/build -j2 all-gcc
       - name: Compile shared verifier through ICK
         run: >
-          compiler/build/gcc/xgcc -Bcompiler/build/gcc/
-          -B/usr/lib/gcc/x86_64-linux-gnu/13/
-          -isystem /usr/lib/gcc/x86_64-linux-gnu/13/include
+          "${{ steps.ick.outputs.compiler }}" ${{ steps.ick.outputs.link_flags }}
           -std=c11 -O2 contract/src/aici.c -o contract-check
       - name: Required shared toolchain contract
         run: ./contract-check verify contract/contracts/build-toolchain-v0.contract.tsv .
       - name: Compile actual Icky Lua runtime through ICK
         run: >
-          compiler/build/gcc/xgcc -Bcompiler/build/gcc/
-          -B/usr/lib/gcc/x86_64-linux-gnu/13/
-          -isystem /usr/lib/gcc/x86_64-linux-gnu/13/include
+          "${{ steps.ick.outputs.compiler }}" ${{ steps.ick.outputs.link_flags }}
           -std=c11 -O2 -DMAKE_LIB -DLUA_USE_POSIX
           -ffunction-sections -fdata-sections -Iicky-lua
           -c icky-lua/onelua.c -o icky-lua.o
       - name: Compile actual arrow C
         run: >
-          compiler/build/gcc/xgcc -Bcompiler/build/gcc/
-          -B/usr/lib/gcc/x86_64-linux-gnu/13/
-          -isystem /usr/lib/gcc/x86_64-linux-gnu/13/include
+          "${{ steps.ick.outputs.compiler }}" ${{ steps.ick.outputs.link_flags }}
           -std=c11 -D_FILE_OFFSET_BITS=64 -O2 -Wall -Wextra -Werror
           -Isrc -Iicky-lua -DFC_POLICY_SOURCE='"policy/composition.lua"'
           -ffunction-sections -fdata-sections
@@ -112,7 +71,6 @@ jobs:
             core-tests
             corpus-store
             benchmark-store
-            compiler/build/gcc/xgcc
-            compiler/build/gcc/cc1
-            compiler/build/gcc/collect2
+            ${{ runner.temp }}/ick-host-stage/qualification
+            ${{ runner.temp }}/ick-host-stage/host-runtime.sha256
 

@@ -364,7 +364,7 @@ WriteResult store_response_bytes(Conversation *conversation, uint64_t request, u
         if (amount > remaining_batch) amount ← remaining_batch;
         uint64_t end ← conversation->extents.written + amount;
         if (end > conversation->extents.capacity) {
-            uint64_t capacity ← ((end + RESERVATION_BYTES - 1) / RESERVATION_BYTES) * RESERVATION_BYTES;
+            uint64_t capacity ← ((end + RESERVATION_BYTES - 1) ÷ RESERVATION_BYTES) * RESERVATION_BYTES;
             int failure ← posix_fallocate(conversation->response, 0, (off_t)capacity);
             if (failure) { errno ← failure; total.result ← storage_failure(conversation); return total; }
             conversation->extents.capacity ← capacity;
