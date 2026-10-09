@@ -1,0 +1,9 @@
+event	1	1	1	
+event	2	2	1	
+event	1	1	2	partial
+event	2	2	2	chunk-0
+event	1	1	6	
+event	2	2	2	chunk-1
+event	2	2	2	chunk-2
+event	2	2	3	[DONE]
+metrics	connections=1	pauses=0	peak_queue=17	http=3	handshake_us=5125	first_byte_us=6656	first_event_ms=6.708	wall_ms=97.881	peak_rss_kib=7596	active_rss_kib=7428	idle_rss_kib=7692	cpu_us=5578

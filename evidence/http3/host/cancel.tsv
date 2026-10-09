@@ -1,0 +1,10 @@
+event	1	1	1	
+event	1	1	2	chunk-0
+event	2	2	1	
+event	1	1	4	
+cancel_latency_ms	0.440
+event	2	2	2	chunk-0
+event	2	2	2	chunk-1
+event	2	2	2	chunk-2
+event	2	2	3	[DONE]
+metrics	connections=1	pauses=0	peak_queue=17	http=30	handshake_us=4552	first_byte_us=5038	first_event_ms=5.899	wall_ms=99.359	peak_rss_kib=7980	active_rss_kib=7928	idle_rss_kib=8216	cpu_us=6029

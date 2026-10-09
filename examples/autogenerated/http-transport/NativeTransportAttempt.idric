@@ -1,0 +1,9 @@
+module NativeTransportAttempt
+
+import FastChatCore
+import Network.HTTP2
+
+-- A real capability probe for a reusable typed H2 engine, not invented syntax.
+-- Network.HTTP2 is absent in the pinned compiler; keep the first failure.
+main : IO ()
+main = putStrLn "HTTP transport capability probe"

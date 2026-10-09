@@ -1,0 +1,39 @@
+ready	9473
+session	1	h3
+handshake	1	early_data=false
+request	1	0	/stream
+request	1	4	/stream
+session	2	h3
+handshake	2	early_data=false
+request	2	0	/stream
+request	2	4	/stream
+reset	2	0
+reset	2	0
+session	3	h3
+handshake	3	early_data=false
+request	3	0	/reset
+request	3	4	/stream
+session	4	h3
+handshake	4	early_data=false
+request	4	0	/close
+request	4	4	/stream
+session	5	h3
+handshake	5	early_data=false
+request	5	0	/stream
+request	5	4	/stream
+session	6	h3
+handshake	6	early_data=false
+request	6	0	/incomplete
+request	6	4	/stream
+session	7	h3
+handshake	7	early_data=false
+request	7	0	/large
+request	7	4	/stream
+session	8	h3
+handshake	8	early_data=false
+request	8	0	/stream
+request	8	4	/stream
+request	8	8	/close
+session	9	h3
+handshake	9	early_data=false
+request	9	0	/stream

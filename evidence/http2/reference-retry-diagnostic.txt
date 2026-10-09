@@ -1,0 +1,1 @@
+reference expected_log_size=10 actual_log_size=9 diagnostic_count=1 fresh_attempt=True completed=True

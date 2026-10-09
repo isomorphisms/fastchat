@@ -1,0 +1,99 @@
+module TransportCoreTest
+
+import Data.Text
+import FastChatCore
+import HttpTransport
+import System
+
+-- Fuel bounds host fixture execution. Completion is an admitted core event,
+-- never inferred from a socket/connection/stream identity.
+receive_events : Number → transport_session → chat_core → IO chat_core
+receive_events Z session core = pure core
+receive_events (S remaining) session core = do
+  observed ← observe_transport session
+  let updated = case observed of
+        Nothing ⇒ core
+        Just event ⇒ handle_model_event event core
+  if request_is_completed (request 1) updated && request_is_completed (request 2) updated
+    then pure updated
+    else receive_events remaining session updated
+
+retry_admission_test : Bool
+retry_admission_test =
+  case submit_request "uncertain" (empty_core (authority 1) (conversation 1)) of
+    submitted_request submitted request_key old_attempt outbound ⇒
+      let uncertain = run_transport_events (simulate_loss_after_chunk outbound) submitted in
+      case retry_request request_key uncertain of
+        retry_rejected _ _ ⇒ False
+        retry_started retried new_attempt fresh ⇒
+          let before_stale = log_size retried
+              after_stale = handle_model_event (chunk_for outbound "stale") retried
+              finished = run_transport_events (simulate_success fresh) after_stale
+          in not (same_attempt old_attempt new_attempt) &&
+             request_is_uncertain request_key uncertain &&
+             log_size after_stale ≟ before_stale &&
+             diagnostic_count after_stale ≟ S (diagnostic_count retried) &&
+             request_is_completed request_key finished
+
+receive_request : Number → transport_session → request_id → Bool → chat_core → IO chat_core
+receive_request Z session request_key completed core = pure core
+receive_request (S remaining) session request_key completed core = do
+  observed ← observe_transport session
+  let updated = case observed of
+        Nothing ⇒ core
+        Just event ⇒ handle_model_event event core
+  if (if completed then request_is_completed request_key updated else request_is_uncertain request_key updated)
+    then pure updated
+    else receive_request remaining session request_key completed updated
+
+live_retry_test : transport_session → chat_core → IO Bool
+live_retry_test session core =
+  case submit_request "live loss" core of
+    submitted_request submitted request_key old_attempt old_outbound ⇒ do
+      sent ← submit_to_transport session old_outbound "/close" "{\"prompt\":\"fixture\"}"
+      uncertain ← receive_request 2000 session request_key False submitted
+      case retry_request request_key uncertain of
+        retry_rejected _ _ ⇒ pure False
+        retry_started retried new_attempt fresh ⇒ do
+          let observed = handle_model_event (chunk_for old_outbound "late old-attempt data") retried
+          retried_sent ← submit_to_transport session fresh "/stream" "{\"prompt\":\"fixture\"}"
+          completed ← receive_request 2000 session request_key True observed
+          pure (sent && request_is_uncertain request_key uncertain && retried_sent &&
+                not (same_attempt old_attempt new_attempt) &&
+                log_size observed ≟ log_size retried &&
+                diagnostic_count observed ≟ S (diagnostic_count retried) &&
+                request_is_completed request_key completed &&
+                request_attempt_is request_key new_attempt completed)
+
+run_live : Text → Text → Int → IO Bool
+run_live origin trust_file protocol = do
+  opened ← open_transport origin trust_file protocol
+  case opened of
+    Nothing ⇒ pure False
+    Just session ⇒
+      case submit_request "first" (empty_core (authority 1) (conversation 1)) of
+        submitted_request after_first _ _ first_outbound ⇒
+          case submit_request "second" after_first of
+            submitted_request after_second _ _ second_outbound ⇒ do
+              first_sent ← submit_to_transport session first_outbound "/stream" "{\"prompt\":\"fixture\"}"
+              second_sent ← submit_to_transport session second_outbound "/stream" "{\"prompt\":\"fixture\"}"
+              finished ← receive_events 2000 session after_second
+              live_retry ← live_retry_test session finished
+              close_transport session
+              putStrLn ("submitted=" ++ show first_sent ++ "," ++ show second_sent ++
+                        " completed=" ++ show (request_is_completed (request 1) finished) ++
+                        "," ++ show (request_is_completed (request 2) finished) ++
+                        " diagnostics=" ++ show (diagnostic_count finished) ++
+                        " retry_admission=" ++ show retry_admission_test ++
+                        " live_loss_retry=" ++ show live_retry)
+              pure (first_sent && second_sent && request_is_completed (request 1) finished &&
+                    request_is_completed (request 2) finished && retry_admission_test && live_retry)
+
+main : IO ()
+main = do
+  arguments ← getArgs
+  case arguments of
+    [_ , origin, trust_file, protocol] ⇒ do
+      passed ← run_live origin trust_file (cast protocol)
+      putStrLn (if passed then "PASS FastChat core with real HTTP transport" else "FAIL FastChat core with real HTTP transport")
+    _ ⇒ putStrLn "FAIL expected origin trust-file protocol"

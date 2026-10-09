@@ -1,0 +1,7 @@
+module NativeQuicTransportAttempt
+
+import FastChatCore
+import Network.HTTP3
+
+main : IO ()
+main = putStrLn "QUIC transport capability probe"

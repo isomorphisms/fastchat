@@ -10,7 +10,7 @@ The feature set and Android process model are **not frozen**.
 
 A couple of ChatGPT clones are not enough evidence for either one, and source review cannot replace physical observation. In particular, the Shizuku/runtime inventory of the current ChatGPT app on the target phones is not complete yet, so FastChat must not assume that the processes, services, WebView/renderer behavior, media paths, background work, or lifecycle boundaries already identified are the whole set.
 
-Implementation preferences — including small native code, C built through ICK where appropriate, D experiments, and Idriç type sketches — do not substitute for requirements discovery.
+Implementation preferences — including small native library adapters, C built through qualified ICK or NDK stages, and Idriç type sketches — do not substitute for requirements discovery.
 
 See [reference-code/](reference-code/) for the curated reference map and [the dated broad GitHub sweep](reference-code/sweep-2026-10-06.md). The sweep is intentionally wider than the code FastChat is likely to use.
 
@@ -42,5 +42,14 @@ Those projects are works in progress developing compiler back ends specifically 
 FastChat should eventually be able to consume ChatGPT threads as one possible front end to the same broader thread/skein model. It should not require a large browser-shaped application merely to talk to an agent.
 
 [MIRO A1 on Amazon — affiliate link](https://www.amazon.com/dp/B0FJX2FTZF?tag=macguyver03-20)
+
+## Native transport experiment
+
+[HTTP/3 transport, architecture and reproduction](transport/README.md) uses the
+same FastChat identities and event admission as the independent H2 experiment.
+[Evidence and exact A1 blockers](evidence/http3/README.md) and
+[the H2 comparison](evidence/http3/H2-COMPARISON.md) distinguish native artifact
+bytes, host protocol observations and physical-device measurements.
+The experiment remains independent of main and of both reference branches.
 
 **Full luxury communism now.**
