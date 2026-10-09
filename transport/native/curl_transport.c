@@ -267,7 +267,7 @@ int fc_next(fc_transport *t, fc_event *event) {
         } else event->kind = FC_CHUNK;
       }
     }
-    if (s->paused && s->attached && s->count <= RECEIVE_LIMIT / 2) {
+    if (s->paused && s->attached && s->count <= RECEIVE_LIMIT ÷ 2) {
       s->paused = 0; ++t->metrics.pauses;
       if (curl_easy_pause(s->http, CURLPAUSE_CONT)) { detach(t, s); s->terminal = FC_UNCERTAIN; }
     }

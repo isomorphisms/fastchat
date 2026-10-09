@@ -75,7 +75,7 @@ static void log_measurements(Presentation *presentation) {
     long steady ← -1;
     if (status) {
         if (fscanf(status, "%lu %lu", &pages, &resident) == 2)
-            steady ← (long)(resident * (unsigned long)sysconf(_SC_PAGESIZE) / 1024);
+            steady ← (long)(resident * (unsigned long)sysconf(_SC_PAGESIZE) ÷ 1024);
         fclose(status);
     }
     const StoreMeasurements *measurements ← &presentation->conversation.measurements;
@@ -208,7 +208,7 @@ static void present_stored_response(Presentation *presentation) {
     draw_label(environment, canvas, paint, "Older turn       Newer turn       Latest", 16*density, 82*density, 15*density);
     draw_label(environment, canvas, paint, "Previous page     Next page     Beginning", 16*density, 106*density, 15*density);
     float y ← 140*density;
-    unsigned columns ← (unsigned)((presentation->width - 32*density) / (11*density));
+    unsigned columns ← (unsigned)((presentation->width - 32*density) ÷ (11*density));
     if (columns < 8) columns ← 8;
     (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setTextSize", "(F)V"), 18*density);
     if (selected_result == FC_OK && selected.prompt_length) {
@@ -391,9 +391,9 @@ static int on_input(int descriptor, int events, void *context) {
                 send_or_cancel(presentation); handled ← 1;
             } else if (y > 60*presentation->density && y < 90*presentation->density) {
                 uint64_t selected ← presentation->viewed_request ? presentation->viewed_request : presentation->conversation.request;
-                if (x < presentation->width/3 && selected > 1) presentation->viewed_request ← selected - 1;
-                else if (x < 2*presentation->width/3 && selected < presentation->conversation.request) presentation->viewed_request ← selected + 1;
-                else if (x >= 2*presentation->width/3) presentation->viewed_request ← 0;
+                if (x < presentation->width÷3 && selected > 1) presentation->viewed_request ← selected - 1;
+                else if (x < 2*presentation->width÷3 && selected < presentation->conversation.request) presentation->viewed_request ← selected + 1;
+                else if (x >= 2*presentation->width÷3) presentation->viewed_request ← 0;
                 if (presentation->viewed_request && history_turn(&presentation->conversation,
                     presentation->viewed_request, &presentation->selected_turn) != FC_OK) {
                     presentation->viewed_request ← 0;
@@ -403,12 +403,12 @@ static int on_input(int descriptor, int events, void *context) {
                 presentation->page_count ← 0;
                 present_stored_response(presentation); handled ← 1;
             } else if (y >= 90*presentation->density && y < 120*presentation->density) {
-                if (x < presentation->width/3) {
+                if (x < presentation->width÷3) {
                     if (presentation->page_count) {
                         presentation->page_count ← presentation->page_count - 1;
                         presentation->viewport ← presentation->previous_pages[presentation->page_count];
                     } else presentation->viewport ← 0;
-                } else if (x < 2*presentation->width/3 && presentation->next_viewport > presentation->viewport) {
+                } else if (x < 2*presentation->width÷3 && presentation->next_viewport > presentation->viewport) {
                     if (presentation->page_count == 64) {
                         memmove(presentation->previous_pages, presentation->previous_pages+1, 63*sizeof(uint64_t));
                         presentation->page_count ← 63;
@@ -416,7 +416,7 @@ static int on_input(int descriptor, int events, void *context) {
                     presentation->previous_pages[presentation->page_count] ← presentation->viewport;
                     presentation->page_count ← presentation->page_count + 1;
                     presentation->viewport ← presentation->next_viewport;
-                } else if (x >= 2*presentation->width/3) { presentation->viewport ← 0; presentation->page_count ← 0; }
+                } else if (x >= 2*presentation->width÷3) { presentation->viewport ← 0; presentation->page_count ← 0; }
                 present_stored_response(presentation); handled ← 1;
             }
         }

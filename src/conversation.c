@@ -438,7 +438,7 @@ Result commit_stored_prefix(Conversation *conversation) {
 }
 static Result reserve_response_tail(Conversation *conversation, uint64_t required) {
     if (required > (uint64_t)INT64_MAX - (RESERVATION_BYTES - 1)) return FC_REJECTED;
-    uint64_t target ← ((required + RESERVATION_BYTES - 1) / RESERVATION_BYTES) * RESERVATION_BYTES;
+    uint64_t target ← ((required + RESERVATION_BYTES - 1) ÷ RESERVATION_BYTES) * RESERVATION_BYTES;
     unsigned char zeroes[FC_WRITE_BYTES] ← {0};
     conversation->measurements.reserve_calls ← conversation->measurements.reserve_calls + 1;
     if (conversation->would_block) return FC_BACKPRESSURE;

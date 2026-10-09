@@ -17,14 +17,16 @@ var repository = $(realpath "$directory/..")
 setglobal ENV.SOURCE_DATE_EPOCH = $(git -C "$repository" log -1 --format=%ct)
 var ndk_bin = "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin"
 var compiler = ick
-var compile_flags = "-B$support/ -B/usr/lib/gcc/x86_64-linux-gnu/13/ -isystem /usr/lib/gcc/x86_64-linux-gnu/13/include"
+var compile_flags = "-B$support/ -fno-link-libatomic"
+var builtin = $("$compiler" "-B$support/" -print-file-name=include)
+test -f "$builtin/stdatomic.h"
 var openssl_target = 'linux-x86_64'
 var cmake_target = []
 var configure_target = []
 test "$platform" = host || test "$platform" = a1
 if (platform === 'a1') {
   var sysroot = "$ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
-  setvar compile_flags = "-B$support/ --sysroot=$sysroot -isystem $sysroot/usr/include -isystem $sysroot/usr/include/arm-linux-androideabi -D__ANDROID__ -D__ANDROID_API__=26 -DBIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD -marm -march=armv7-a -mfloat-abi=softfp -mfpu=vfpv3-d16"
+  setvar compile_flags = "-B$support/ --sysroot=$sysroot -nostdinc -isystem $builtin -isystem $sysroot/usr/include -isystem $sysroot/usr/include/arm-linux-androideabi -D__ANDROID__ -D__ANDROID_API__=26 -D__ANDROID_MIN_SDK_VERSION__=26 -DBIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD -marm -march=armv7-a -mfloat-abi=softfp -mfpu=vfpv3-d16"
   setvar openssl_target = 'linux-armv4'
   # Feature probes compile through ICK and link through the platform driver.
   # curl deliberately changes its probes back to EXECUTABLE; it cannot use

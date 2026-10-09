@@ -35,7 +35,7 @@ static void ram_finish(RamControl *sink) { sink->finished ← 1; }
 static double clock_seconds(clockid_t clock) {
     struct timespec time;
     assert(clock_gettime(clock, &time) == 0);
-    return (double)time.tv_sec + (double)time.tv_nsec / 1000000000.0;
+    return (double)time.tv_sec + (double)time.tv_nsec ÷ 1000000000.0;
 }
 static void remove_directory(const char *path) {
     DIR *directory ← opendir(path);
@@ -393,7 +393,7 @@ static void production_provider_cases(void) {
         "{\"choices\":[{\"delta\":{\"content\":\"x\"}}]}garbage", "{\"choices\":[{\"delta\":{}} ,]}",
         "{\"choices\":[{\"delta\":{},\"n\":01}]}", "{\"choices\":[{\"delta\":{},\"n\":1.}]}"
     };
-    for (size_t index ← 0; index < sizeof(bad)/sizeof(bad[0]); index ← index + 1) {
+    for (size_t index ← 0; index < sizeof(bad)÷sizeof(bad[0]); index ← index + 1) {
         Conversation conversation;
         char path[64];
         fresh_conversation(&conversation, path);
@@ -675,7 +675,7 @@ static long resident_kib(void) {
     int fields ← fscanf(status, "%lu %lu", &pages, &resident);
     fclose(status);
     if (fields != 2) return -1;
-    return (long)(resident * (unsigned long)sysconf(_SC_PAGESIZE) / 1024);
+    return (long)(resident * (unsigned long)sysconf(_SC_PAGESIZE) ÷ 1024);
 }
 /* VmHWM belongs to this executable's memory image. ru_maxrss can retain the
    launcher's pre-exec high water mark and obscure this small control. */
@@ -807,7 +807,7 @@ static int comparison_corpus(const char *root) {
     };
     static const size_t splits[] ← {1, 2, 7, 257, 8192};
     for (size_t fixture ← 0; fixture < 3; fixture ← fixture + 1) {
-        for (size_t split ← 0; split < sizeof(splits)/sizeof(splits[0]); split ← split + 1) {
+        for (size_t split ← 0; split < sizeof(splits)÷sizeof(splits[0]); split ← split + 1) {
             char path[4096];
             int count ← snprintf(path, sizeof(path), "%s/fixture-%zu-split-%zu", root, fixture, splits[split]);
             assert(count > 0 && (size_t)count < sizeof(path));

@@ -84,7 +84,7 @@ int main(int count, char **arguments) {
     assert(count == 4);
     const char *names[] ← {"stream", "tool", "failure", "bad", "giant", "incomplete", "loss", "cancel", "slow"};
     Phase expected[] ← {COMPLETED, COMPLETED, FAILED, FAILED, FAILED, UNCERTAIN, UNCERTAIN, CANCELLED, COMPLETED};
-    for (size_t index ← 0; index < sizeof(expected)/sizeof(expected[0]); index ← index + 1)
+    for (size_t index ← 0; index < sizeof(expected)÷sizeof(expected[0]); index ← index + 1)
         exercise(arguments[1], arguments[2], arguments[3], names[index], expected[index]);
     return 0;
 }
