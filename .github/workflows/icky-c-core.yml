@@ -8,7 +8,7 @@ permissions:
 jobs:
   core:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 120
     env:
       ASAN_OPTIONS: detect_leaks=0
     steps:
@@ -17,6 +17,11 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - name: Qualified division-capable C producer
+        id: ick
+        uses: isomorphisms/ai-ci/ick-host@015cc7901ae0b3ad262b476f24e129b53c56db95
+      - name: Locate the exact C frontend
+        run: echo "ICK_SUPPORT=$(dirname "$("${{ steps.ick.outputs.compiler }}" -print-prog-name=cc1)")" >> "$GITHUB_ENV"
       - name: Exact shared modified-Lua qualifier
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -99,11 +104,14 @@ jobs:
       - name: Qualified runtime linked into actual consumer and stock-object counterfactual
         run: >
           grease-runtime/grease scripts/test-core.grease
-          "$GITHUB_WORKSPACE/host-ick/compiler/build/gcc/xgcc"
-          "$GITHUB_WORKSPACE/host-ick/compiler/build/gcc"
+          "${{ steps.ick.outputs.compiler }}"
+          "${{ env.ICK_SUPPORT }}"
           "$GITHUB_WORKSPACE/icky-lua" "$GITHUB_WORKSPACE/core-tests"
           "$GITHUB_WORKSPACE/runtime-gate" "$GITHUB_WORKSPACE/grease-runtime/grease"
           "$GITHUB_WORKSPACE/stock-lua"
+          "$GITHUB_WORKSPACE/host-ick/compiler/build/gcc/xgcc"
+          "$GITHUB_WORKSPACE/host-ick/compiler/build/gcc"
+          ${{ steps.ick.outputs.link_flags }}
       - name: Branch measurement
         run: ./core-tests benchmark "$(cat ci/renderer-mode)" benchmark-store
       - name: Fresh-process completed replay

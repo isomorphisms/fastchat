@@ -1,8 +1,8 @@
 #!/usr/bin/env grease
 # Host producer qualification; Android has a separate declared producer lane.
 set -eu -o pipefail
-if (len(ARGV) < 7) {
-  echo 'usage: test-core.grease ICK_DRIVER ICK_LIBEXEC ICKY_LUA_SOURCE OUTPUT FP_CHECKOUT GREASE STOCK_LUA_SOURCE [host options...]'
+if (len(ARGV) < 9) {
+  echo 'usage: test-core.grease ICK_DRIVER ICK_LIBEXEC ICKY_LUA_SOURCE OUTPUT FP_CHECKOUT GREASE STOCK_LUA_SOURCE RUNTIME_ICK_DRIVER RUNTIME_ICK_LIBEXEC [host options...]'
   exit 2
 }
 var compiler = ARGV[0]
@@ -12,7 +12,9 @@ var output = ARGV[3]
 var fp = ARGV[4]
 var grease = ARGV[5]
 var stock = ARGV[6]
-var flags = ARGV[7:]
+var runtime_compiler = ARGV[7]
+var runtime_support = ARGV[8]
+var flags = ARGV[9:]
 var script_directory = $(dirname "$0")
 var repository = $(realpath "$script_directory/..")
 test ! -e "$output.runtime"
@@ -36,12 +38,12 @@ printf 'shared_qualifier\t%s\nconsumer_revision\t%s\n' "$fp_revision" "$(git -C 
 git -C "$repository" diff HEAD -- src tests policy scripts/test-core.grease > "$output.runtime/consumer-source.diff"
 var policy = "$repository/policy/composition.lua"
 var policy_before = $(sha256sum "$policy")
-if ! "$grease" "$fp/scripts/qualify-icky-lua.grease" "$lua" "$compiler" "$support" "$output.runtime/qualified" { blocked shared_runtime_gate_failed }
+if ! "$grease" "$fp/scripts/qualify-icky-lua.grease" "$lua" "$runtime_compiler" "$runtime_support" "$output.runtime/qualified" { blocked shared_runtime_gate_failed }
 var runtime_object = "$output.runtime/qualified/icky-lua.o"
 var object_before = $(sha256sum "$runtime_object")
 printf 'linked_runtime_before\t%s\npolicy_source_before\t%s\n' "$object_before" "$policy_before" >> "$receipt"
 # The same object that executed the full glyph fixture is the consumer input.
-var host_flags = ["-B$support/", '-B/usr/lib/gcc/x86_64-linux-gnu/13/', '-isystem', '/usr/lib/gcc/x86_64-linux-gnu/13/include', '-fno-use-linker-plugin', '-std=c11', '-D_FILE_OFFSET_BITS=64', '-O2', '-Wall', '-Wextra', '-Werror', "-I$repository/src", "-I$lua", "-DFC_POLICY_SOURCE=\"$policy\"", '-ffunction-sections', '-fdata-sections']
+var host_flags = ["-B$support/", '-fno-use-linker-plugin', '-std=c11', '-D_FILE_OFFSET_BITS=64', '-O2', '-Wall', '-Wextra', '-Werror', "-I$repository/src", "-I$lua", "-DFC_POLICY_SOURCE=\"$policy\"", '-ffunction-sections', '-fdata-sections']
 var sources = ["$repository/src/conversation.c", "$repository/src/render_policy.c", "$repository/src/fixture_transport.c", "$repository/tests/conversation.c"]
 var link_flags = ['-Wl,--gc-sections', '-Wl,--unique=.rodata.fastchat_policy', '-lm', '-ldl']
 if ! "$compiler" @host_flags @flags @sources "$runtime_object" @link_flags -o "$output" > "$output.runtime/consumer-build.stdout" 2> "$output.runtime/consumer-build.stderr" { blocked consumer_build_failed }
@@ -55,7 +57,7 @@ readelf -d "$output" > "$output.runtime/linked-libraries.txt"
 if rg -iq 'NEEDED.*lua' "$output.runtime/linked-libraries.txt" { blocked unexpected_dynamic_lua_library }
 if ! "$output" > "$output.runtime/suite.stdout" 2> "$output.runtime/suite.stderr" { blocked consumer_suite_failed }
 # Counterfactual: same consumer/raw policy, actual same-version stock object.
-"$compiler" @host_flags -DMAKE_LIB -DLUA_USE_POSIX "-I$stock" -c "$stock/onelua.c" -o "$output.runtime/stock-lua.o"
+"$compiler" @host_flags @flags -DMAKE_LIB -DLUA_USE_POSIX "-I$stock" -c "$stock/onelua.c" -o "$output.runtime/stock-lua.o"
 "$compiler" @host_flags @flags @sources "$output.runtime/stock-lua.o" @link_flags -o "$output.runtime/stock-consumer"
 if "$output.runtime/stock-consumer" benchmark ram unused > "$output.runtime/stock-consumer.stdout" 2> "$output.runtime/stock-consumer.stderr" {
   blocked stock_linked_consumer_admitted
