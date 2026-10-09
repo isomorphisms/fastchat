@@ -1,0 +1,15 @@
+corpus	fixture=0	split=1	bytes=0	events=3	crc=ffffffff	replay=completed
+corpus	fixture=0	split=2	bytes=0	events=3	crc=ffffffff	replay=completed
+corpus	fixture=0	split=7	bytes=0	events=3	crc=ffffffff	replay=completed
+corpus	fixture=0	split=257	bytes=0	events=3	crc=ffffffff	replay=completed
+corpus	fixture=0	split=8192	bytes=0	events=3	crc=ffffffff	replay=completed
+corpus	fixture=1	split=1	bytes=9	events=4	crc=d24bf7ea	replay=completed
+corpus	fixture=1	split=2	bytes=9	events=4	crc=d24bf7ea	replay=completed
+corpus	fixture=1	split=7	bytes=9	events=4	crc=d24bf7ea	replay=completed
+corpus	fixture=1	split=257	bytes=9	events=4	crc=d24bf7ea	replay=completed
+corpus	fixture=1	split=8192	bytes=9	events=4	crc=d24bf7ea	replay=completed
+corpus	fixture=2	split=1	bytes=27	events=4	crc=e81eb256	replay=completed
+corpus	fixture=2	split=2	bytes=27	events=4	crc=e81eb256	replay=completed
+corpus	fixture=2	split=7	bytes=27	events=4	crc=e81eb256	replay=completed
+corpus	fixture=2	split=257	bytes=27	events=4	crc=e81eb256	replay=completed
+corpus	fixture=2	split=8192	bytes=27	events=4	crc=e81eb256	replay=completed

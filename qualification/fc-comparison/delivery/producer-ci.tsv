@@ -1,0 +1,5 @@
+branch	source_revision	workflow	status	run_url	artifact_id	github_reported_artifact_zip_sha256	artifact_expiry
+FC-D1	6dff84f007213b275ed0ffb6bde151769b5bcac0	FastChat A1 APK producer	PASS	https://github.com/isomorphisms/fastchat/actions/runs/37588526201	11467449280	sha256:2d65fbdce1237eaa57b91114ae43a5b993de51d9fa4d7d4cbdbc02cfc5fce263	2027-01-05T07:37:59Z
+FC-D1	6dff84f007213b275ed0ffb6bde151769b5bcac0	FastChat Icky core	PASS	https://github.com/isomorphisms/fastchat/actions/runs/37588526189	11467043450	sha256:33fe91d85444a357c4bea5dd89a1d10fb8d2497ce82991477086d048db7205cd	2027-01-05T07:37:59Z
+FC-S1	eeee961cd60cf9281295eb318f2c3fb362385e74	FastChat A1 APK producer	PASS	https://github.com/isomorphisms/fastchat/actions/runs/37588532317	11467836109	sha256:64c6ccfd38c20f04f7d15144532119dc599344e6e855c7e2f9d2c8df6315a333	2027-01-05T07:38:03Z
+FC-S1	eeee961cd60cf9281295eb318f2c3fb362385e74	FastChat Icky core	PASS	https://github.com/isomorphisms/fastchat/actions/runs/37588532340	11467741546	sha256:3ea4b0fe2230a6c892368ee503e72e1fa3c84bd18eaede9aff464c624db521da	2027-01-05T07:38:03Z
