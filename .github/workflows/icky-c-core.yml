@@ -58,6 +58,10 @@ jobs:
           tests/conversation.c icky-lua.o -Wl,--gc-sections -lm -ldl -o core-tests
       - name: Deterministic fault, transport and replay suite
         run: ./core-tests
+      - name: Refresh mutation-test package metadata
+        run: sudo apt-get update
+      - name: Install the mutation verifier dependency
+        run: sudo apt-get install -y ripgrep
       - name: Exact Grease for hostile mutations
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
