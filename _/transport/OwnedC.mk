@@ -49,8 +49,12 @@ $(OUTPUT)/owned-c/%.o: $(OUTPUT)/owned-c/%.s
 
 $(OUTPUT)/libfastchat_transport.so: $(OBJECTS)
 	"$(PLATFORM_DRIVER)" -shared -Wl,--no-undefined -Wl,--exclude-libs,ALL $^ $(LIBRARIES) $(SYSTEM_LIBS) -o "$@"
+	"$(NDK_BIN)/llvm-readelf" -r "$@" > "$@.relocations"
+	! grep -Eq 'R_[A-Z0-9_]+_COPY' "$@.relocations"
 $(OUTPUT)/fastchat-transport-probe: $(OUTPUT)/owned-c/probe.o $(OBJECTS)
 	"$(PLATFORM_DRIVER)" $^ $(LIBRARIES) $(SYSTEM_LIBS) -o "$@"
+	"$(NDK_BIN)/llvm-readelf" -r "$@" > "$@.relocations"
+	! grep -Eq 'R_[A-Z0-9_]+_COPY' "$@.relocations"
 framing: $(OUTPUT)/owned-c/framing-test.o $(OUTPUT)/owned-c/sse.o $(OUTPUT)/owned-c/provider_framing.o
 	test "$(PLATFORM)" = host
 	"$(PLATFORM_DRIVER)" $^ -o "$(OUTPUT)/framing-test"
