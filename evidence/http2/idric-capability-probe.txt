@@ -1,0 +1,9 @@
+Error: Module Network.HTTP2 not found
+
+NativeTransportAttempt:4:1--4:21
+ 1 | module NativeTransportAttempt
+ 2 |
+ 3 | import FastChatCore
+ 4 | import Network.HTTP2
+     ^^^^^^^^^^^^^^^^^^^^
+

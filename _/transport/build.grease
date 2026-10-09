@@ -1,0 +1,113 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+# Build-host only. Inputs are verified absolute paths, never device toolchains.
+var root = $1
+var sources = $2
+var output = $3
+var ndk = $4
+var platform = $5
+var protocol = $6
+var cmake = $7
+
+test "$platform" = host || test "$platform" = a1
+test "$protocol" = 2 || test "$protocol" = 3
+test -f "$ndk/source.properties"
+test -x "$cmake"
+var ndk_bin = "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin"
+var compiler = "$ndk_bin/clang"
+var openssl_target = 'linux-x86_64'
+var cmake_target = []
+var configure_target = []
+if (platform === 'a1') {
+  setvar compiler = "$ndk_bin/armv7a-linux-androideabi24-clang"
+  setvar openssl_target = 'android-arm'
+  setvar configure_target = ['-D__ANDROID_API__=24']
+  setvar cmake_target = ["-DCMAKE_TOOLCHAIN_FILE=$ndk/build/cmake/android.toolchain.cmake",
+                        '-DANDROID_ABI=armeabi-v7a', '-DANDROID_PLATFORM=android-24']
+}
+test -x "$compiler"
+mkdir -p "$output/prefix" "$output/openssl"
+var prefix = "$output/prefix"
+var jobs = '4'
+setglobal ENV.ANDROID_NDK_ROOT = ndk
+setglobal ENV.PATH = ndk_bin ++ ':' ++ ENV.PATH
+
+proc verify_source(name, revision) {
+  var actual = $(git -C "$sources/$name" rev-parse HEAD)
+  if (actual !== revision) { echo "FAIL source revision $name" >&2; exit 2 }
+  git -C "$sources/$name" diff --cached --exit-code
+  if (name !== 'curl') { git -C "$sources/$name" diff --exit-code }
+}
+verify_source curl a05f34973e6c4bb629d018f7cb51487be1c904d8
+verify_source openssl 67b5686b4419b4cb8caa502711c41815f5279751
+verify_source nghttp2 49908f992027821912b96a13898b665a35aa3a0a
+if (protocol === '3') {
+  verify_source nghttp3 f3eb315feda478cdb4919720a7961c0321e1bd89
+  verify_source ngtcp2 fefb3f16d56e1ee306b7067cab1630e14878e6fa
+  test $(git -C "$sources/nghttp3/lib/sfparse" rev-parse HEAD) = 7eaf5b651f67123edf2605391023ed2fd7e2ef16
+  git -C "$sources/nghttp3/lib/sfparse" diff --exit-code
+}
+# Check the complete modified dependency diff, including receive-window policy.
+git -C "$sources/curl" diff --exit-code -- . ':!lib/http2.c' ':!lib/vquic/curl_ngtcp2.c' ':!lib/transfer.c'
+git -C "$sources/curl" diff --no-ext-diff --no-color --no-renames | sed '/^index /d' > "$output/curl.patch"
+sed '/^index /d' "$root/_/transport/curl-small-windows.patch" > "$output/curl-expected.patch"
+cmp "$output/curl.patch" "$output/curl-expected.patch"
+
+cd "$output/openssl"
+env CC="$compiler" "$sources/openssl/Configure" "$openssl_target" @configure_target \
+  no-shared no-tests no-apps no-module no-legacy --prefix="$prefix" --libdir=lib
+make -j "$jobs" build_libs > "$output/openssl-build.log" 2>&1
+make install_dev > "$output/openssl-install.log" 2>&1
+
+proc build_library(name, ...options) {
+  "$cmake" -S "$sources/$name" -B "$output/$name" @cmake_target \
+    -DCMAKE_C_COMPILER="$compiler" -DCMAKE_BUILD_TYPE=MinSizeRel \
+    -DCMAKE_INSTALL_PREFIX="$prefix" -DCMAKE_PREFIX_PATH="$prefix" \
+    -DCMAKE_FIND_ROOT_PATH="$prefix" \
+    -DOPENSSL_CRYPTO_LIBRARY="$prefix/lib/libcrypto.a" \
+    -DOPENSSL_SSL_LIBRARY="$prefix/lib/libssl.a" -DOPENSSL_INCLUDE_DIR="$prefix/include" \
+    -DNGHTTP2_INCLUDE_DIR="$prefix/include" -DNGHTTP2_LIBRARY="$prefix/lib/libnghttp2.a" \
+    -DNGHTTP3_INCLUDE_DIR="$prefix/include" -DNGHTTP3_LIBRARY="$prefix/lib/libnghttp3.a" \
+    -DNGTCP2_INCLUDE_DIR="$prefix/include" -DNGTCP2_LIBRARY="$prefix/lib/libngtcp2.a" \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_LIBDIR=lib \
+    -DENABLE_LIB_ONLY=ON -DENABLE_STATIC_LIB=ON -DENABLE_SHARED_LIB=OFF \
+    -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON \
+    @options > "$output/$name-configure.log" 2>&1
+  "$cmake" --build "$output/$name" -j "$jobs" > "$output/$name-build.log" 2>&1
+  "$cmake" --install "$output/$name" > "$output/$name-install.log" 2>&1
+}
+build_library nghttp2
+var quic = []
+var libraries = ["$prefix/lib/libcurl.a", "$prefix/lib/libnghttp2.a"]
+if (protocol === '3') {
+  build_library nghttp3
+  build_library ngtcp2 -DENABLE_OPENSSL=ON -DENABLE_GNUTLS=OFF \
+                       -UHAVE_SSL_PROVIDE_QUIC_DATA -UHAVE_SSL_SET_QUIC_TLS_CBS \
+                       "-DOPENSSL_ROOT_DIR=$prefix" -DOPENSSL_USE_STATIC_LIBS=ON
+  setvar quic = ['-DUSE_NGTCP2=ON']
+  setvar libraries = ["$prefix/lib/libcurl.a", "$prefix/lib/libnghttp2.a",
+                      "$prefix/lib/libngtcp2_crypto_ossl.a", "$prefix/lib/libngtcp2.a",
+                      "$prefix/lib/libnghttp3.a"]
+}
+var curl_options = ['-DBUILD_CURL_EXE=OFF', '-DBUILD_STATIC_LIBS=ON',
+  '-DHTTP_ONLY=ON', '-DCURL_USE_OPENSSL=ON', "-DOPENSSL_ROOT_DIR=$prefix",
+  '-DOPENSSL_USE_STATIC_LIBS=ON', '-DUSE_NGHTTP2=ON', '-DCURL_USE_LIBPSL=OFF',
+  '-DUSE_LIBIDN2=OFF', '-DCURL_ZLIB=OFF', '-DCURL_BROTLI=OFF', '-DCURL_ZSTD=OFF',
+  '-DCURL_DISABLE_PROXY=ON', '-DCURL_DISABLE_COOKIES=ON', '-DCURL_DISABLE_ALTSVC=ON',
+  '-DCURL_DISABLE_HSTS=ON', '-DENABLE_THREADED_RESOLVER=OFF',
+  '-DBUILD_LIBCURL_DOCS=OFF', '-DENABLE_CURL_MANUAL=OFF'] ++ quic
+build_library curl @curl_options
+
+# The external dependency build above retains its original compiler.
+# Every maintained C translation unit uses the exact glyph-capable ICK input.
+var ick = ENV.ICK
+var ick_flags = get(ENV, 'ICK_FLAGS', '')
+make -f "$root/_/transport/OwnedC.mk" ROOT="$root" OUTPUT="$output" \
+  NDK="$ndk" PLATFORM="$platform" PROTOCOL="$protocol" ICK="$ick" ICK_FLAGS="$ick_flags"
+wc -c "$output/libfastchat_transport.so" "$output/fastchat-transport-probe" > "$output/unstripped-bytes.txt"
+"$ndk_bin/llvm-strip" "$output/libfastchat_transport.so" "$output/fastchat-transport-probe"
+wc -c "$output/libfastchat_transport.so" "$output/fastchat-transport-probe" > "$output/stripped-bytes.txt"
+"$ndk_bin/llvm-readelf" -h -d "$output/libfastchat_transport.so" > "$output/elf.txt"
+"$ick" --version > "$output/compiler.txt"
+sha256sum "$output/libfastchat_transport.so" "$output/fastchat-transport-probe" > "$output/artifacts.sha256"
+echo "PASS build $platform HTTP/$protocol"

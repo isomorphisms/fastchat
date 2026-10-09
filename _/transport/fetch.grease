@@ -1,0 +1,30 @@
+#!/usr/bin/env grease
+# Host-only, pinned source preparation. Never run on MIRO A1.
+var root = $1
+var sources = $2
+var protocol = $3
+mkdir -p "$sources"
+proc pin(name, repository, revision) {
+  if ! test -d "$sources/$name/.git" {
+    git clone --no-checkout --filter=blob:none "https://github.com/$repository.git" "$sources/$name"
+  }
+  git -C "$sources/$name" fetch origin "$revision"
+  git -C "$sources/$name" checkout --detach "$revision"
+  test $(git -C "$sources/$name" rev-parse HEAD) = "$revision"
+}
+pin curl curl/curl a05f34973e6c4bb629d018f7cb51487be1c904d8
+pin openssl openssl/openssl 67b5686b4419b4cb8caa502711c41815f5279751
+pin nghttp2 nghttp2/nghttp2 49908f992027821912b96a13898b665a35aa3a0a
+if (protocol === '3') {
+  pin nghttp3 ngtcp2/nghttp3 f3eb315feda478cdb4919720a7961c0321e1bd89
+  pin ngtcp2 ngtcp2/ngtcp2 fefb3f16d56e1ee306b7067cab1630e14878e6fa
+  git -C "$sources/nghttp3" submodule update --init --recursive
+  test $(git -C "$sources/nghttp3/lib/sfparse" rev-parse HEAD) = 7eaf5b651f67123edf2605391023ed2fd7e2ef16
+}
+if git -C "$sources/curl" diff --quiet {
+  git -C "$sources/curl" apply "$root/_/transport/curl-small-windows.patch"
+}
+git -C "$sources/curl" diff --no-ext-diff --no-color --no-renames | sed '/^index /d' > "$sources/curl-policy.patch"
+sed '/^index /d' "$root/_/transport/curl-small-windows.patch" > "$sources/curl-expected.patch"
+cmp "$sources/curl-policy.patch" "$sources/curl-expected.patch"
+echo 'PASS pinned sources and complete curl policy patch'

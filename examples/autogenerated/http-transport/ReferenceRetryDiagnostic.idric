@@ -1,0 +1,18 @@
+module ReferenceRetryDiagnostic
+
+import FastChatCore
+
+-- Preserve the reference unchanged; inspect its failed assertion independently.
+main : IO ()
+main = case submit_request "uncertain" (empty_core (authority 1) (conversation 4)) of
+  submitted_request after_submit request_key old_attempt old_outbound ⇒
+    let uncertain = run_transport_events (simulate_loss_after_chunk old_outbound) after_submit in
+    case retry_request request_key uncertain of
+      retry_rejected _ _ ⇒ putStrLn "FAIL retry rejected"
+      retry_started after_retry new_attempt new_outbound ⇒
+        let observed = handle_model_event (chunk_for old_outbound "late stale bytes") after_retry
+            finished = run_transport_events (simulate_success new_outbound) observed
+        in putStrLn ("reference expected_log_size=10 actual_log_size=" ++ show (log_size finished) ++
+                     " diagnostic_count=" ++ show (diagnostic_count finished) ++
+                     " fresh_attempt=" ++ show (not (same_attempt old_attempt new_attempt)) ++
+                     " completed=" ++ show (request_is_completed request_key finished))

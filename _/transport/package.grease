@@ -1,0 +1,45 @@
+#!/usr/bin/env grease
+# Package already-built runtime outputs, never build or install on the phone.
+var root = $1
+var build = $2
+var destination = $3
+var protocol = $4
+var source_revision = $5
+var stage = "$destination/stage"
+test $(git -C "$root" rev-parse HEAD) = "$source_revision"
+mkdir -p "$stage/bin" "$stage/lib" "$stage/build-info"
+cp "$build/fastchat-transport-probe" "$stage/bin/"
+cp "$build/libfastchat_transport.so" "$stage/lib/"
+cp -r "$root/transport/licenses" "$stage/"
+cp "$build/compiler.txt" "$build/elf.txt" "$build/stripped-bytes.txt" "$stage/build-info/"
+cp "$root/evidence/http$protocol/a1/inputs.sha256" "$stage/build-info/"
+chmod 755 "$stage/bin/fastchat-transport-probe"
+chmod 644 "$stage/lib/libfastchat_transport.so"
+cat > "$stage/receipt.tsv" <<EOF
+field	value
+schema	fastchat-native-experiment-v1
+target	MIRO_A1
+abi	armeabi-v7a
+runtime	Bionic;Android_API_24_minimum
+protocol	HTTP/$protocol
+source_repository	isomorphisms/fastchat
+source_revision	$source_revision
+base_revision	b49f0f7083d2d034ba76b910a43592d6d07bd18b
+compiler	Android_NDK_r29;29.0.14206865
+build	PASS
+package	PASS
+publication_at_packaging	NOT_VERIFIED
+installation	NOT_RUN
+launch	NOT_RUN
+physical_device	BLOCKED/NOT_RUN
+native_idric_core	BLOCKED/NOT_RUN
+provider_account	NOT_RUN
+EOF
+cd "$stage"
+sha256sum bin/fastchat-transport-probe lib/libfastchat_transport.so > files.sha256
+tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
+  -czf "$destination/fastchat-http$protocol-a1.tar.gz" .
+cd "$destination"
+sha256sum "fastchat-http$protocol-a1.tar.gz" > archive.sha256
+tar -tzf "fastchat-http$protocol-a1.tar.gz" > archive-contents.txt
+echo "PASS packaged HTTP/$protocol ARMv7 runtime; physical execution NOT_RUN"

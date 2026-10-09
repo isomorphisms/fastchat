@@ -1,0 +1,28 @@
+ready	9472
+session	1	h2
+request	1	1	/stream
+request	1	3	/stream
+session	2	h2
+request	2	1	/stream
+request	2	3	/stream
+session	3	h2
+request	3	1	/reset
+request	3	3	/stream
+session	4	h2
+request	4	1	/close
+request	4	3	/stream
+session	5	h2
+request	5	1	/stream
+request	5	3	/stream
+session	6	h2
+request	6	1	/incomplete
+request	6	3	/stream
+session	7	h2
+request	7	1	/large
+request	7	3	/stream
+session	8	h2
+request	8	1	/stream
+request	8	3	/stream
+request	8	5	/close
+session	9	h2
+request	9	1	/stream
