@@ -73,10 +73,14 @@ static void log_measurements(Presentation *presentation) {
         fclose(status);
     }
     const StoreMeasurements *measurements ← &presentation->conversation.measurements;
-    __android_log_print(ANDROID_LOG_INFO, "FastChat", "source=%s phase=%s peak_rss_kib=%ld steady_rss_kib=%ld data_bytes=%llu journal_bytes=%llu writes=%llu max_write=%zu max_view=%zu fixture_buffer_max=%zu generation_cpu_ns=%llu",
+    __android_log_print(ANDROID_LOG_INFO, "FastChat", "source=%s phase=%s peak_rss_kib=%ld steady_rss_kib=%ld data_bytes=%llu journal_bytes=%llu writes=%llu reserve_bytes=%llu reserve_calls=%llu arena_capacity=%llu arena_high_water=%llu max_write=%zu max_view=%zu fixture_buffer_max=%zu generation_cpu_ns=%llu",
         FC_SOURCE_REVISION, phase_name(presentation->conversation.phase), peak, steady,
         (unsigned long long)measurements->data_bytes, (unsigned long long)measurements->journal_bytes,
-        (unsigned long long)measurements->write_count, measurements->maximum_write, measurements->maximum_view,
+        (unsigned long long)measurements->write_count,
+        (unsigned long long)measurements->reserve_bytes, (unsigned long long)measurements->reserve_calls,
+        (unsigned long long)presentation->conversation.arena_capacity,
+        (unsigned long long)presentation->conversation.arena_high_water,
+        measurements->maximum_write, measurements->maximum_view,
         presentation->transport.maximum_buffered, (unsigned long long)(process_cpu_ns() - presentation->generation_cpu_ns));
     __android_log_print(ANDROID_LOG_INFO, "FastChat", "policy_heap_peak=%zu policy_heap_limit=%u", policy_memory_peak(), FC_POLICY_BYTES);
 }

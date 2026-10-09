@@ -1,4 +1,4 @@
-name: FastChat A1 APK producer
+name: FastChat A1 arena APK producer
 on:
   pull_request:
   workflow_dispatch:
@@ -11,8 +11,8 @@ jobs:
     timeout-minutes: 120
     env:
       ASAN_OPTIONS: detect_leaks=0
-      ANDROID_VERSION_CODE: '2'
-      ANDROID_VERSION_NAME: '0.2-icky-lua'
+      ANDROID_VERSION_CODE: '3'
+      ANDROID_VERSION_NAME: '0.3-arena'
       ANDROID_MIN_SDK: '26'
       ANDROID_TARGET_SDK: '34'
       ANDROID_KEYSTORE_TYPE: JKS
@@ -20,7 +20,7 @@ jobs:
       ANDROID_STORE_PASSWORD: fastchat-development
       ANDROID_KEY_PASSWORD: fastchat-development
       ANDROID_EXPECTED_CERT_SHA256: aa9151e3922fa4795987c3655bc7aa4712620f1d94c24a2075acd7b29d8ac86e
-      ANDROID_PACKAGE_ID: org.isomorphisms.fastchat.diskstreaming
+      ANDROID_PACKAGE_ID: org.isomorphisms.fastchat.diskstreaming.arena
     steps:
       - name: Exact source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -90,7 +90,7 @@ jobs:
       - name: Preserve stripped artifact and producer receipts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: a1-apk-${{ github.event.pull_request.head.sha || github.sha }}
+          name: a1-arena-apk-${{ github.event.pull_request.head.sha || github.sha }}
           if-no-files-found: error
           path: |
             fastchat.apk

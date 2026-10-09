@@ -14,8 +14,13 @@ assembler, NDK linker, Bionic CRT/stubs and ARM builtins retain their declared r
 The result exports NativeActivity, is ELF32 ARM, and rejects the hard-float calling
 convention. Physical-device execution is NOT_RUN.
 
-The unchanged Flexible Pipes qualifier at `5caaba31256bfb424638f8a3d4d554c56fa9a970` still uses its exact prior ICK artifact. Its interpreter/embedded literal-source gate, unchanged object across consumer linking, embedded policy byte comparison and actual stock-runtime rejection passed. The current compiler handles the maintained consumer C separately.
+The appendFAT library is refreshed byte-for-byte from its canonical owner at `a4ab471bd26a1aa6a3d35260d443128072bfc947`, C blob `8330901117e84d49f89ec0fc71747361c0a2c77b`. This is the owner's single-token division migration; the header is unchanged.
 
 Hosted workflows bind their subsequent artifacts and source-revision receipts to
 the exact PR head. Local source/runtime acceptance does not claim those hosted
 jobs, APK installation or physical execution have already passed.
+
+The current streaming base is integrated with its exact modified-Lua gate.
+The combined arena consumer passes that gate, byte-identical embedded policy,
+unchanged linked-runtime object checks, complete core suite and actual same-version
+stock-runtime rejection. Arena allocation/reuse behavior remains unchanged.

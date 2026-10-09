@@ -43,8 +43,8 @@ var runtime_object = "$output.runtime/qualified/icky-lua.o"
 var object_before = $(sha256sum "$runtime_object")
 printf 'linked_runtime_before\t%s\npolicy_source_before\t%s\n' "$object_before" "$policy_before" >> "$receipt"
 # The same object that executed the full glyph fixture is the consumer input.
-var host_flags = ["-B$support/", '-fno-use-linker-plugin', '-std=c11', '-D_FILE_OFFSET_BITS=64', '-O2', '-Wall', '-Wextra', '-Werror', "-I$repository/src", "-I$lua", "-DFC_POLICY_SOURCE=\"$policy\"", '-ffunction-sections', '-fdata-sections']
-var sources = ["$repository/src/conversation.c", "$repository/src/render_policy.c", "$repository/src/fixture_transport.c", "$repository/tests/conversation.c"]
+var host_flags = ["-B$support/", '-fno-use-linker-plugin', '-std=c11', '-D_FILE_OFFSET_BITS=64', '-O2', '-Wall', '-Wextra', '-Werror', "-I$repository/src", "-I$repository/third-party/appendfat-arena", "-I$lua", "-DFC_POLICY_SOURCE=\"$policy\"", '-ffunction-sections', '-fdata-sections']
+var sources = ["$repository/src/conversation.c", "$repository/src/render_policy.c", "$repository/src/fixture_transport.c", "$repository/third-party/appendfat-arena/appendfat_arena.c", "$repository/tests/conversation.c"]
 var link_flags = ['-Wl,--gc-sections', '-Wl,--unique=.rodata.fastchat_policy', '-lm', '-ldl']
 if ! "$compiler" @host_flags @flags @sources "$runtime_object" @link_flags -o "$output" > "$output.runtime/consumer-build.stdout" 2> "$output.runtime/consumer-build.stderr" { blocked consumer_build_failed }
 var object_after = $(sha256sum "$runtime_object")

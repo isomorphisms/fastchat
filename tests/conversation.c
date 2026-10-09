@@ -143,6 +143,48 @@ static void response_cases(void) {
     remove_directory(path);
     puts("PASS empty, one/many chunks, every UTF-8 cut, disk-first visibility, duplicate terminal, completed replay");
 }
+static void arena_reuse_case(void) {
+    Conversation conversation;
+    char path[64];
+    unsigned char first[257];
+    static const unsigned char second[] ← "second";
+    memset(first, 'r', sizeof(first));
+
+    fresh_conversation(&conversation, path);
+    feed_bytes(&conversation, first, sizeof(first));
+    finish_conversation(&conversation);
+
+    uint64_t first_end ← conversation.response_base + conversation.extents.committed;
+    uint64_t arena_capacity ← conversation.arena_capacity;
+    uint64_t reserve_calls ← conversation.measurements.reserve_calls;
+    assert(arena_capacity > first_end);
+    assert(reserve_calls > 0);
+
+    assert(submit_text(&conversation, "again", 5) == FC_OK);
+    assert(admit_event(&conversation, conversation.request,
+                       conversation.attempt, START) == FC_OK);
+    assert(conversation.response_base == first_end);
+    assert(conversation.arena_capacity == arena_capacity);
+    assert(conversation.extents.capacity == arena_capacity - first_end);
+
+    feed_bytes(&conversation, second, sizeof(second) - 1);
+    finish_conversation(&conversation);
+    assert(conversation.arena_capacity == arena_capacity);
+    assert(conversation.measurements.reserve_calls == reserve_calls);
+    expect_bytes(&conversation, second, sizeof(second) - 1);
+
+    uint64_t second_base ← conversation.response_base;
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, path) == FC_OK);
+    assert(conversation.phase == COMPLETED);
+    assert(conversation.response_base == second_base);
+    assert(conversation.arena_capacity == arena_capacity);
+    expect_bytes(&conversation, second, sizeof(second) - 1);
+    conversation_close(&conversation);
+    remove_directory(path);
+    puts("PASS shared response arena reuses reserved tail across attempts and replay");
+}
+
 static void cancellation_cases(void) {
     Conversation pending;
     char pending_path[] ← "/tmp/fastchat-cancel-XXXXXX";
@@ -783,6 +825,7 @@ int main(int argc, char **argv) {
     giant_framed_offer_case();
     prefix_visibility_case();
     response_cases();
+    arena_reuse_case();
     cancellation_cases();
     interrupted_cases();
     process_death_case();
