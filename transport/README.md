@@ -65,7 +65,14 @@ its canonical log. The Idriç FFI currently checks identities fit positive signe
 
 ## Reproduction
 
-All builds run on a Linux build host, never on A1. Use the Grease recipes in
+All builds run on a Linux build host, never on A1. Set `ICK` to the exact qualified
+C driver from ICK `c61e448251744a2f40ad743ebef1a027bdcd2f9d` before invoking
+the recipes; `ICK_FLAGS` may supply explicit resource paths for an uninstalled
+driver. The pinned `isomorphisms/ai-ci` producer actions at
+`015cc7901ae0b3ad262b476f24e129b53c56db95` build the host or ARM driver.
+`OwnedC.mk` compiles maintained C to assembly with ICK, then uses the existing
+NDK assembler and platform linker. The A1 profile remains ARMv7/API 24; foreign
+library compilation and the existing Idriç/runtime gates retain their roles. Use the Grease recipes in
 `_/transport/`; the prerequisite host compiler is Android NDK r29. CMake 4.4.4,
 GNU make, Perl and Git build the pinned foreign libraries. Paths passed to these
 recipes must be absolute. The scripts are Grease, not Bash.
