@@ -48,7 +48,7 @@ run through the actual Lua sequencing/transport at hostile one-byte splits.
 
 Current producer recipes:
 
-    grease scripts/test-core.grease ICK_DRIVER ICK_LIBEXEC ICKY_LUA_SOURCE OUTPUT FP_CHECKOUT GREASE STOCK_LUA_SOURCE [host options...]
+    grease scripts/test-core.grease ICK_DRIVER ICK_LIBEXEC ICKY_LUA_SOURCE OUTPUT FP_CHECKOUT GREASE STOCK_LUA_SOURCE RUNTIME_ICK_DRIVER RUNTIME_ICK_LIBEXEC [host options...]
     grease scripts/build-native.grease ICK_ARM_DRIVER ICK_LIBEXEC NDK ICKY_LUA_SOURCE OUTPUT_DIRECTORY
     grease scripts/package-native.grease ANDROID_NDK_REPOSITORY NATIVE_LIBRARY OUTPUT_APK
     grease scripts/compare-branches.grease D1_EXECUTABLE S1_EXECUTABLE NEW_OUTPUT_DIRECTORY

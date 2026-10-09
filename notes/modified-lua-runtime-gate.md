@@ -10,7 +10,7 @@ The runtime is isomorphisms/lua `87306483cec50f8c750a22dda1d0742246fad756`, Lua
 
 The host recipe is now:
 
-    grease scripts/test-core.grease ICK_DRIVER ICK_LIBEXEC ICKY_LUA_SOURCE OUTPUT FP_CHECKOUT GREASE STOCK_LUA_SOURCE [host options...]
+    grease scripts/test-core.grease ICK_DRIVER ICK_LIBEXEC ICKY_LUA_SOURCE OUTPUT FP_CHECKOUT GREASE STOCK_LUA_SOURCE RUNTIME_ICK_DRIVER RUNTIME_ICK_LIBEXEC [host options...]
 
 `FP_CHECKOUT` must be clean at the exact qualifier commit. `STOCK_LUA_SOURCE`
 must be clean at `0b29f408433e92953cc72b1d3e06c7ac8139e439`, the actual stock
