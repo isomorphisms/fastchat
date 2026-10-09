@@ -14,6 +14,9 @@ var directory = $(dirname "$0")
 var repository = $(realpath "$directory/..")
 var host = "$ndk/toolchains/llvm/prebuilt/linux-x86_64"
 var sysroot = "$host/sysroot"
+var builtin = $("$compiler" "-B$support/" -print-file-name=include)
+test -f "$builtin/stdatomic.h"
+test -f "$builtin/stddef.h"
 var machine = $("$compiler" -dumpmachine)
 test "$machine" = arm-linux-gnueabi
 var identity = $("$compiler" --version)
@@ -26,19 +29,19 @@ git -C "$lua" diff --quiet HEAD -- '*.c' '*.h'
 mkdir -p "$output"
 var flags = ['-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', '-fPIC', '-fvisibility=hidden', '-ffunction-sections', '-fdata-sections', '-D_FILE_OFFSET_BITS=64', '-D__ANDROID__', '-D__ANDROID_API__=26', '-D__ANDROID_MIN_SDK_VERSION__=26', '-DBIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD', '-marm', '-march=armv7-a', '-mfloat-abi=softfp', '-mfpu=vfpv3-d16']
 for source in (['conversation', 'render_policy', 'fixture_transport']) {
-  "$compiler" "-B$support/" "--sysroot=$sysroot" -isystem "$sysroot/usr/include" \
+  "$compiler" "-B$support/" "--sysroot=$sysroot" -nostdinc -isystem "$builtin" -isystem "$sysroot/usr/include" \
     -isystem "$sysroot/usr/include/arm-linux-androideabi" "-I$repository/src" \
     "-I$repository/third-party/appendfat-arena" "-I$lua" \
     "-DFC_POLICY_SOURCE=\"$repository/policy/composition.lua\"" @flags \
     -c "$repository/src/$source.c" -o "$output/$source.o"
 }
-"$compiler" "-B$support/" "--sysroot=$sysroot" -isystem "$sysroot/usr/include" \
+"$compiler" "-B$support/" "--sysroot=$sysroot" -nostdinc -isystem "$builtin" -isystem "$sysroot/usr/include" \
   -isystem "$sysroot/usr/include/arm-linux-androideabi" "-I$repository/third-party/appendfat-arena" @flags \
   -c "$repository/third-party/appendfat-arena/appendfat_arena.c" -o "$output/appendfat_arena.o"
-"$compiler" "-B$support/" "--sysroot=$sysroot" -isystem "$sysroot/usr/include" \
+"$compiler" "-B$support/" "--sysroot=$sysroot" -nostdinc -isystem "$builtin" -isystem "$sysroot/usr/include" \
   -isystem "$sysroot/usr/include/arm-linux-androideabi" "-I$lua" @flags \
   -DMAKE_LIB -DLUA_USE_POSIX -c "$lua/onelua.c" -o "$output/icky-lua.o"
-"$compiler" "-B$support/" "--sysroot=$sysroot" -isystem "$sysroot/usr/include" \
+"$compiler" "-B$support/" "--sysroot=$sysroot" -nostdinc -isystem "$builtin" -isystem "$sysroot/usr/include" \
   -isystem "$sysroot/usr/include/arm-linux-androideabi" "-I$repository/src" @flags \
   "-DFC_SOURCE_REVISION=\"$revision\"" \
   -c "$repository/android/native_activity.c" -o "$output/native_activity.o"

@@ -64,7 +64,7 @@ Result policy_load_source(const void *bytes, size_t length) {
     runtime.follows_prefixes ← lua_toboolean(runtime.state, -1);
     lua_pop(runtime.state, 1);
     static const char *functions[] ← { "composer_action", "barrier_due", "fixture_scenario", "fixture_frame" };
-    for (size_t index ← 0; index < sizeof(functions)/sizeof(functions[0]); index ← index + 1) {
+    for (size_t index ← 0; index < sizeof(functions)÷sizeof(functions[0]); index ← index + 1) {
         lua_getfield(runtime.state, -1, functions[index]);
         int callable ← lua_isfunction(runtime.state, -1);
         lua_pop(runtime.state, 1);
