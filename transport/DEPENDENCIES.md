@@ -68,19 +68,21 @@ Client references inspected, with no copied implementation:
 
 ## Toolchains and build consequences
 
-Android NDK r29 (`Pkg.Revision=29.0.14206865`) compiles and links handwritten C
-glue and the pinned native libraries. A1 uses
+Android NDK r29 (`Pkg.Revision=29.0.14206865`) compiles the pinned foreign libraries
+and assembles/links maintained C output. Maintained C is compiled to assembly by
+ICK `c61e448251744a2f40ad743ebef1a027bdcd2f9d` through `_/transport/OwnedC.mk`. A1 uses
 `armv7a-linux-androideabi24-clang`, Android API 24, `armeabi-v7a`, softfp/Bionic.
 The runtime profile is Android 14/API 34, 32-bit, 4 KiB pages. The DSO's only
 dynamic requirements are Android `libc.so` and `libdl.so`; foreign TLS/protocol
 libraries are static and their symbols hidden. No Java, Gradle, d8, RefC or
 generated-C lowering is used.
 
-ICK was inspected at `7afb1820cd59c0c51d19a7e37902c14f4466f442`: the evaluated
+The earlier evaluation inspected ICK at `7afb1820cd59c0c51d19a7e37902c14f4466f442`: the evaluated
 installed snapshot offers AArch64 target tools, not a qualified ARM32/Bionic
 compiler/linker for this complete static library build. That exact available
-target/runtime gap justifies NDK here; it is not a general claim that ICK cannot
-compile ARM32. Idriç is pinned at
+target/runtime gap described that earlier build. The division migration now
+qualifies current ICK for maintained ARM32 source while retaining the declared
+NDK runtime/link and foreign-library boundary. Idriç is pinned at
 `ff4d852862a3942592f8ade9afde8d409d9803be`; native-module probes and host Chez
 FFI qualification are retained, with no ARM/Thumb execution claim.
 
