@@ -1,0 +1,100 @@
+name: FastChat A1 APK producer
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  a1-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      ASAN_OPTIONS: detect_leaks=0
+      ANDROID_VERSION_CODE: '2'
+      ANDROID_VERSION_NAME: '0.2-icky-lua'
+      ANDROID_MIN_SDK: '26'
+      ANDROID_TARGET_SDK: '34'
+      ANDROID_KEYSTORE_TYPE: JKS
+      ANDROID_KEY_ALIAS: fastchat-material3-dev
+      ANDROID_STORE_PASSWORD: fastchat-development
+      ANDROID_KEY_PASSWORD: fastchat-development
+      ANDROID_EXPECTED_CERT_SHA256: aa9151e3922fa4795987c3655bc7aa4712620f1d94c24a2075acd7b29d8ac86e
+      ANDROID_PACKAGE_ID: org.isomorphisms.fastchat.diskfirst
+    steps:
+      - name: Exact source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Current Grease implementation runtime
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          repository: dilapidated-shed/grease
+          run-id: 37478624499
+          artifact-ids: 11419719229
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          path: grease
+      - name: Runtime file modes
+        run: chmod +x grease/_bin/cxx-asan/ysh
+      - name: Exact Grease identity
+        run: echo '7e31cd05b7a9d8fb2a4a9e003a7f3fcb0159138506d17f0fb28da8cbe22aa85c  grease/_bin/cxx-asan/ysh' | sha256sum -c -
+      - name: ASAN producer mapping
+        run: sudo sysctl vm.mmap_rnd_bits=28
+      - name: Producer compiler runtime dependencies
+        run: sudo apt-get update
+      - name: Matching GNU ARM assembler
+        run: sudo apt-get install -y binutils-arm-linux-gnueabi libgmp10 libmpfr6 libmpc3 libisl23 libzstd1 ripgrep
+      - name: Pinned Icky Lua source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: isomorphisms/lua
+          ref: 87306483cec50f8c750a22dda1d0742246fad756
+          path: icky-lua
+          persist-credentials: false
+      - name: Pinned NativeActivity packager
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: isomorphisms/android-NDK
+          ref: 7c61ee43e75f7c2dab9288edb0e10055898b36e6
+          path: packaging
+          persist-credentials: false
+      - name: Producer SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
+        with:
+          packages: ''
+      - name: Exact SDK and NDK
+        run: sdkmanager 'ndk;29.0.14206865' 'build-tools;34.0.0' 'platforms;android-34'
+      - name: Qualified division-capable ARM C producer
+        id: ick
+        uses: isomorphisms/ai-ci/ick-android@015cc7901ae0b3ad262b476f24e129b53c56db95
+        with:
+          abi: armeabi-v7a
+          ndk: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
+      - name: Locate the exact C frontend and declared assembler
+        run: |
+          echo "ICK_SUPPORT=$(dirname "$("${{ steps.ick.outputs.compiler }}" -print-prog-name=cc1)")" >> "$GITHUB_ENV"
+          ln -sfn /usr/bin/arm-linux-gnueabi-as "$(dirname "$("${{ steps.ick.outputs.compiler }}" -print-prog-name=cc1)")/as"
+      - name: ICK C and Icky Lua runtime; platform link
+        run: >
+          grease/_bin/cxx-asan/ysh scripts/build-native.grease
+          "${{ steps.ick.outputs.compiler }}" "${{ env.ICK_SUPPORT }}" "$ANDROID_HOME/ndk/29.0.14206865" icky-lua native
+      - name: Stable signer APK packaging
+        run: >
+          env ANDROID_BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
+          ANDROID_KEYSTORE="$GITHUB_WORKSPACE/android/signing/fastchat-comparison-dev.jks"
+          ANDROID_SOURCE_COMMIT="${{ github.event.pull_request.head.sha || github.sha }}"
+          grease/_bin/cxx-asan/ysh scripts/package-native.grease
+          packaging native/libfastchat.so fastchat.apk
+      - name: Preserve stripped artifact and producer receipts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: a1-apk-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          path: |
+            fastchat.apk
+            fastchat.receipt.tsv
+            native/native-abi.txt
+            native/native-digests.txt
+            native/native-sizes.txt

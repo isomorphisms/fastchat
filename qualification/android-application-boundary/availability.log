@@ -1,0 +1,10 @@
+/workspace/scratch/de9e8fcd5e57/fastchat-disk/qualification/android-application-boundary/availability-probe.c:3:42: error: 'introduced' undeclared here (not in a function)
+    3 |     __attribute__((availability(android, introduced=26, strict)));
+      |                                          ^~~~~~~~~~
+/workspace/scratch/de9e8fcd5e57/fastchat-disk/qualification/android-application-boundary/availability-probe.c:3:57: error: 'strict' undeclared here (not in a function)
+    3 |     __attribute__((availability(android, introduced=26, strict)));
+      |                                                         ^~~~~~
+/workspace/scratch/de9e8fcd5e57/fastchat-disk/qualification/android-application-boundary/availability-probe.c:3:5: error: 'availability' attribute directive ignored [-Werror=attributes]
+    3 |     __attribute__((availability(android, introduced=26, strict)));
+      |     ^~~~~~~~~~~~~
+cc1: all warnings being treated as errors

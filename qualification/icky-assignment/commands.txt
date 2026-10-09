@@ -1,0 +1,7 @@
+# Executed host frontend commands; paths identify this receipt environment.
+# No A1 compilation, device execution, or substitute compiler was used.
+/workspace/scratch/9a823f093abb/ick/stage/bin/aarch64-linux-gnu-gcc --version
+/workspace/scratch/9a823f093abb/ick/stage/bin/aarch64-linux-gnu-gcc -print-prog-name=cc1
+/workspace/scratch/9a823f093abb/ick/stage/bin/aarch64-linux-gnu-gcc -std=c11 -Wall -Wextra -Werror -fsyntax-only -nostdinc /workspace/scratch/f48f7b33f935/fastchat-probe/assignment-arrow.c
+/workspace/scratch/9a823f093abb/ick/stage/bin/aarch64-linux-gnu-gcc -std=c11 -Wall -Wextra -Werror -fsyntax-only -nostdinc /workspace/scratch/f48f7b33f935/fastchat-probe/ordinary-c-control.c
+git -C /workspace/scratch/9a823f093abb/ick diff --quiet e3c2a40b4edafc4d9caca55d1f7c094e6aab9589 7afb1820cd59c0c51d19a7e37902c14f4466f442 -- ick .gitmodules

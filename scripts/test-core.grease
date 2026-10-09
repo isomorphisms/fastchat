@@ -1,0 +1,34 @@
+#!/usr/bin/env grease
+# Producer-only; run from any directory.
+set -eu -o pipefail
+if (len(ARGV) < 4) {
+  echo 'usage: test-core.grease ICK_DRIVER ICK_LIBEXEC ICKY_LUA_SOURCE OUTPUT [compile/link options...]'
+  exit 2
+}
+var compiler = ARGV[0]
+var support = ARGV[1]
+var lua = ARGV[2]
+var output = ARGV[3]
+var flags = ARGV[4:]
+var script_directory = $(dirname "$0")
+var repository = $(realpath "$script_directory/..")
+test -x "$compiler"
+test -d "$support"
+var output_directory = $(dirname "$output")
+mkdir -p "$output_directory"
+var identity = $("$compiler" --version)
+echo "$identity" | rg -q '\(GCC\)'
+var lua_revision = $(git -C "$lua" rev-parse HEAD)
+test "$lua_revision" = 87306483cec50f8c750a22dda1d0742246fad756
+git -C "$lua" diff --quiet HEAD -- '*.c' '*.h'
+# Foreign runtime source is compiled by ICK too. It is not a stock interpreter.
+"$compiler" "-B$support/" -std=c11 -O2 -ffunction-sections -fdata-sections \
+  -DMAKE_LIB -DLUA_USE_POSIX "-I$lua" @flags -c "$lua/onelua.c" -o "$output.icky-lua.o"
+# The arrow source itself rejects ordinary GCC; there is no replacement path.
+"$compiler" "-B$support/" -std=c11 -D_FILE_OFFSET_BITS=64 -O2 -Wall -Wextra -Werror \
+  "-I$repository/src" "-I$lua" "-DFC_POLICY_SOURCE=\"$repository/policy/composition.lua\"" \
+  -ffunction-sections -fdata-sections @flags "$repository/src/conversation.c" \
+  "$repository/src/render_policy.c" "$repository/src/fixture_transport.c" \
+  "$repository/tests/conversation.c" "$output.icky-lua.o" -Wl,--gc-sections -lm -ldl -o "$output"
+sha256sum "$output"
+echo 'Built test executable; execute with the matching host/emulation runtime.'

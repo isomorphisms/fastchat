@@ -1,0 +1,10 @@
+gate	status	evidence
+main_base	RECORDED	b49f0f7083d2d034ba76b910a43592d6d07bd18b
+c_source_revision	RECORDED	7c79736673964be38bdaa85a74d9d5c590b93083
+c_host_suite	PASS	disk-tests.txt;streaming-tests.txt
+sibling_corpus	PASS	15 response/split stores and 8 MiB journal/response byte cmp
+arm_icky_c_objects	PASS	native/native-digests.txt
+native_platform_link	PASS	NDK r29 CRT/stubs/runtime and ld.lld only
+signed_apk	PASS	apk.receipt.tsv;../../../../artifacts/fastchat-c-pass.apk
+physical_miro_a1	BLOCKED/NOT_RUN	No physical execution available in this producer session
+

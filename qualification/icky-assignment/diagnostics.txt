@@ -1,0 +1,33 @@
+/workspace/scratch/f48f7b33f935/fastchat-probe/assignment-arrow.c: In function 'initialize_append_address':
+/workspace/scratch/f48f7b33f935/fastchat-probe/assignment-arrow.c:9:21: error: stray '\342' in program
+    9 |     address->stream <U+2190> 1;
+      |                     ^~~~~~~~
+/workspace/scratch/f48f7b33f935/fastchat-probe/assignment-arrow.c:9:12: error: statement with no effect [-Werror=unused-value]
+    9 |     address->stream ← 1;
+      |     ~~~~~~~^~~~~~~~
+/workspace/scratch/f48f7b33f935/fastchat-probe/assignment-arrow.c:9:20: error: expected ';' before numeric constant
+    9 |     address->stream ← 1;
+      |                    ^  ~
+      |                    ;
+/workspace/scratch/f48f7b33f935/fastchat-probe/assignment-arrow.c:10:21: error: stray '\342' in program
+   10 |     address->offset <U+2190> 0;
+      |                     ^~~~~~~~
+/workspace/scratch/f48f7b33f935/fastchat-probe/assignment-arrow.c:10:12: error: statement with no effect [-Werror=unused-value]
+   10 |     address->offset ← 0;
+      |     ~~~~~~~^~~~~~~~
+/workspace/scratch/f48f7b33f935/fastchat-probe/assignment-arrow.c:10:20: error: expected ';' before numeric constant
+   10 |     address->offset ← 0;
+      |                    ^  ~
+      |                    ;
+/workspace/scratch/f48f7b33f935/fastchat-probe/assignment-arrow.c: In function 'advance_written_extent':
+/workspace/scratch/f48f7b33f935/fastchat-probe/assignment-arrow.c:15:20: error: stray '\342' in program
+   15 |     written_extent <U+2190> written_extent + 1;
+      |                    ^~~~~~~~
+/workspace/scratch/f48f7b33f935/fastchat-probe/assignment-arrow.c:15:5: error: statement with no effect [-Werror=unused-value]
+   15 |     written_extent ← written_extent + 1;
+      |     ^~~~~~~~~~~~~~
+/workspace/scratch/f48f7b33f935/fastchat-probe/assignment-arrow.c:15:19: error: expected ';' before 'written_extent'
+   15 |     written_extent ← written_extent + 1;
+      |                   ^  ~~~~~~~~~~~~~~
+      |                   ;
+cc1: all warnings being treated as errors

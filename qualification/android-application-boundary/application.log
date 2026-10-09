@@ -1,0 +1,348 @@
+In file included from /workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/api-level.h:202,
+                 from /workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/sys/cdefs.h:337,
+                 from /workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/stdint.h:32,
+                 from /workspace/scratch/f48f7b33f935/compiler-arrow/gcc/include/stdint.h:11,
+                 from /workspace/scratch/de9e8fcd5e57/fastchat-disk/qualification/android-application-boundary/application-probe.c:2:
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/bits/get_device_api_level_inlines.h:38:48: error: expected ';', ',' or ')' before '__name'
+   38 | int __system_property_get(const char* _Nonnull __name, char*  _Nonnull __value);
+      |                                                ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/bits/get_device_api_level_inlines.h:39:31: error: expected ';', ',' or ')' before '__s'
+   39 | int atoi(const char* _Nonnull __s) __attribute_pure__;
+      |                               ^~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/bits/get_device_api_level_inlines.h: In function 'android_get_device_api_level':
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/bits/get_device_api_level_inlines.h:43:7: error: implicit declaration of function '__system_property_get' [-Wimplicit-function-declaration]
+   43 |   if (__system_property_get("ro.build.version.sdk", value) < 1) return -1;
+      |       ^~~~~~~~~~~~~~~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/bits/get_device_api_level_inlines.h:44:19: error: implicit declaration of function 'atoi' [-Wimplicit-function-declaration]
+   44 |   int api_level = atoi(value);
+      |                   ^~~~
+In file included from /workspace/scratch/de9e8fcd5e57/fastchat-disk/qualification/android-application-boundary/application-probe.c:4:
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/fcntl.h: At top level:
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/fcntl.h:110:32: error: expected ';', ',' or ')' before '__path'
+  110 | int creat(const char* _Nonnull __path, mode_t __mode);
+      |                                ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/fcntl.h:112:34: error: expected ';', ',' or ')' before '__path'
+  112 | int creat64(const char* _Nonnull __path, mode_t __mode);
+      |                                  ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/fcntl.h:121:47: error: expected ';', ',' or ')' before '__path'
+  121 | int openat(int __dir_fd, const char* _Nonnull __path, int __flags, ...);
+      |                                               ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/fcntl.h:123:49: error: expected ';', ',' or ')' before '__path'
+  123 | int openat64(int __dir_fd, const char* _Nonnull __path, int __flags, ...);
+      |                                                 ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/fcntl.h:132:31: error: expected ';', ',' or ')' before '__path'
+  132 | int open(const char* _Nonnull __path, int __flags, ...);
+      |                               ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/fcntl.h:134:33: error: expected ';', ',' or ')' before '__path'
+  134 | int open64(const char* _Nonnull __path, int __flags, ...);
+      |                                 ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/fcntl.h:146:68: error: expected ';', ',' or ')' before '__in_offset'
+  146 | ssize_t splice(int __in_fd, off64_t* __BIONIC_COMPLICATED_NULLNESS __in_offset, int __out_fd, off64_t* __BIONIC_COMPLICATED_NULLNESS __out_offset, size_t __length, unsigned int __flags);
+      |                                                                    ^~~~~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/fcntl.h:170:57: error: expected ';', ',' or ')' before '__iov'
+  170 | ssize_t vmsplice(int __fd, const struct iovec* _Nonnull __iov, size_t __count, unsigned int __flags);
+      |                                                         ^~~~~
+In file included from /workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/sys/select.h:42,
+                 from /workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:35,
+                 from /workspace/scratch/de9e8fcd5e57/fastchat-disk/qualification/android-application-boundary/application-probe.c:5:
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:57:28: error: expected ';' before 'const'
+   57 | extern const char* _Nonnull const sys_siglist[_NSIG];
+      |                            ^~~~~~
+      |                            ;
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:57:35: error: type defaults to 'int' in declaration of 'sys_siglist' [-Wimplicit-int]
+   57 | extern const char* _Nonnull const sys_siglist[_NSIG];
+      |                                   ^~~~~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:58:28: error: expected ';' before 'const'
+   58 | extern const char* _Nonnull const sys_signame[_NSIG]; /* BSD compatibility. */
+      |                            ^~~~~~
+      |                            ;
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:58:35: error: type defaults to 'int' in declaration of 'sys_signame' [-Wimplicit-int]
+   58 | extern const char* _Nonnull const sys_signame[_NSIG]; /* BSD compatibility. */
+      |                                   ^~~~~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:62:63: error: expected ';', ',' or ')' before '__new_action'
+   62 | int sigaction(int __signal, const struct sigaction* _Nullable __new_action, struct sigaction* _Nullable __old_action);
+      |                                                               ^~~~~~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:71:23: error: expected '=', ',', ';', 'asm' or '__attribute__' before 'signal'
+   71 | sighandler_t _Nonnull signal(int __signal, sighandler_t _Nullable __handler);
+      |                       ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:72:34: error: expected ';', ',' or ')' before '__set'
+   72 | int sigaddset(sigset_t* _Nonnull __set, int __signal);
+      |                                  ^~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:78:34: error: expected ';', ',' or ')' before '__set'
+   78 | int sigdelset(sigset_t* _Nonnull __set, int __signal);
+      |                                  ^~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:84:36: error: expected ';', ',' or ')' before '__set'
+   84 | int sigemptyset(sigset_t* _Nonnull __set);
+      |                                    ^~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:90:35: error: expected ';', ',' or ')' before '__set'
+   90 | int sigfillset(sigset_t* _Nonnull __set);
+      |                                   ^~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:96:42: error: expected ';', ',' or ')' before '__set'
+   96 | int sigismember(const sigset_t* _Nonnull __set, int __signal);
+      |                                          ^~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:103:35: error: expected ';', ',' or ')' before '__set'
+  103 | int sigpending(sigset_t* _Nonnull __set);
+      |                                   ^~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:109:54: error: expected ';', ',' or ')' before '__new_set'
+  109 | int sigprocmask(int __how, const sigset_t* _Nullable __new_set, sigset_t* _Nullable __old_set);
+      |                                                      ^~~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:115:41: error: expected ';', ',' or ')' before '__mask'
+  115 | int sigsuspend(const sigset_t* _Nonnull __mask);
+      |                                         ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:121:38: error: expected ';', ',' or ')' before '__set'
+  121 | int sigwait(const sigset_t* _Nonnull __set, int* _Nonnull __signal);
+      |                                      ^~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:150:42: error: expected ';', ',' or ')' before '__new_signal_stack'
+  150 | int sigaltstack(const stack_t* _Nullable __new_signal_stack, stack_t*  _Nullable __old_signal_stack);
+      |                                          ^~~~~~~~~~~~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:152:41: error: expected ';', ',' or ')' before '__info'
+  152 | void psiginfo(const siginfo_t* _Nonnull __info, const char* _Nullable __msg);
+      |                                         ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:153:50: error: expected ';', ',' or ')' before '__msg'
+  153 | void psignal(int __signal, const char* _Nullable __msg);
+      |                                                  ^~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/signal.h:164:58: error: expected ';', ',' or ')' before '__new_set'
+  164 | int pthread_sigmask(int __how, const sigset_t* _Nullable __new_set, sigset_t* _Nullable __old_set);
+      |                                                          ^~~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/sys/select.h:137:53: error: expected ';', ',' or ')' before '__read_fds'
+  137 | int select(int __max_fd_plus_one, fd_set* _Nullable __read_fds, fd_set* _Nullable __write_fds, fd_set* _Nullable __exception_fds, struct timeval* _Nullable __timeout);
+      |                                                     ^~~~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/sys/select.h:149:54: error: expected ';', ',' or ')' before '__read_fds'
+  149 | int pselect(int __max_fd_plus_one, fd_set* _Nullable __read_fds, fd_set* _Nullable __write_fds, fd_set* _Nullable __exception_fds, const struct timespec* _Nullable __timeout, const sigset_t* _Nullable __mask);
+      |                                                      ^~~~~~~~~~
+In file included from /workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:39:
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/bits/getopt.h:41:45: error: expected ';', ',' or ')' before '__argv'
+   41 | int getopt(int __argc, char* const _Nonnull __argv[_Nullable], const char* _Nonnull __options);
+      |                                             ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/bits/getopt.h:46:24: error: expected '=', ',', ';', 'asm' or '__attribute__' before 'optarg'
+   46 | extern char* _Nullable optarg;
+      |                        ^~~~~~
+In file included from /workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:40:
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/bits/ioctl.h:60:5: error: conflicting types for 'ioctl'; have 'int(int,  unsigned int, ...)'
+   60 | int ioctl(int __fd, unsigned __op, ...) __overloadable __enable_if(1, "") __RENAME(ioctl);
+      |     ^~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/bits/ioctl.h:43:5: note: previous declaration of 'ioctl' with type 'int(int,  int, ...)'
+   43 | int ioctl(int __fd, int __op, ...);
+      |     ^~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/bits/ioctl.h:60:75: error: expected ',' or ';' before '__asm__'
+   60 | int ioctl(int __fd, unsigned __op, ...) __overloadable __enable_if(1, "") __RENAME(ioctl);
+      |                                                                           ^~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:78:24: error: expected '=', ',', ';', 'asm' or '__attribute__' before '*' token
+   78 | extern char* _Nullable * _Nullable environ;
+      |                        ^
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:145:32: error: expected ';', ',' or ')' before '__path'
+  145 | int execv(const char* _Nonnull __path, char* _Nullable const* _Nullable __argv);
+      |                                ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:146:33: error: expected ';', ',' or ')' before '__file'
+  146 | int execvp(const char* _Nonnull __file, char* _Nullable const* _Nullable __argv);
+      |                                 ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:147:34: error: expected ';', ',' or ')' before '__file'
+  147 | int execvpe(const char* _Nonnull __file, char* _Nullable const* _Nullable __argv, char* _Nullable const* _Nullable __envp);
+      |                                  ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:148:33: error: expected ';', ',' or ')' before '__file'
+  148 | int execve(const char* _Nonnull __file, char* _Nullable const* _Nullable __argv, char* _Nullable const* _Nullable __envp);
+      |                                 ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:149:32: error: expected ';', ',' or ')' before '__path'
+  149 | int execl(const char* _Nonnull __path, const char* _Nullable __arg0, ...) __attribute__((__sentinel__));
+      |                                ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:150:33: error: expected ';', ',' or ')' before '__file'
+  150 | int execlp(const char* _Nonnull __file, const char* _Nullable __arg0, ...) __attribute__((__sentinel__));
+      |                                 ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:151:33: error: expected ';', ',' or ')' before '__path'
+  151 | int execle(const char* _Nonnull __path, const char* _Nullable __arg0, ... /*,  char* const* __envp */)
+      |                                 ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:253:44: error: expected ';', ',' or ')' before '__list'
+  253 | int getgroups(int __size, gid_t* _Nullable __list);
+      |                                            ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:254:53: error: expected ';', ',' or ')' before '__list'
+  254 | int setgroups(size_t __size, const gid_t* _Nullable __list);
+      |                                                     ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:255:31: error: expected ';', ',' or ')' before '__ruid'
+  255 | int getresuid(uid_t* _Nonnull __ruid, uid_t* _Nonnull __euid, uid_t* _Nonnull __suid);
+      |                               ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:256:31: error: expected ';', ',' or ')' before '__rgid'
+  256 | int getresgid(gid_t* _Nonnull __rgid, gid_t* _Nonnull __egid, gid_t* _Nonnull __sgid);
+      |                               ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:257:17: error: expected '=', ',', ';', 'asm' or '__attribute__' before 'getlogin'
+  257 | char* _Nullable getlogin(void);
+      |                 ^~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:265:36: error: expected ';', ',' or ')' before '__path'
+  265 | long pathconf(const char* _Nonnull __path, int __name);
+      |                                    ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:267:33: error: expected ';', ',' or ')' before '__path'
+  267 | int access(const char* _Nonnull __path, int __mode);
+      |                                 ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:268:49: error: expected ';', ',' or ')' before '__path'
+  268 | int faccessat(int __dirfd, const char* _Nonnull __path, int __mode, int __flags);
+      |                                                 ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:269:31: error: expected ';', ',' or ')' before '__old_path'
+  269 | int link(const char* _Nonnull __old_path, const char* _Nonnull __new_path);
+      |                               ^~~~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:270:51: error: expected ';', ',' or ')' before '__old_path'
+  270 | int linkat(int __old_dir_fd, const char* _Nonnull __old_path, int __new_dir_fd, const char* _Nonnull __new_path, int __flags);
+      |                                                   ^~~~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:271:33: error: expected ';', ',' or ')' before '__path'
+  271 | int unlink(const char* _Nonnull __path);
+      |                                 ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:272:48: error: expected ';', ',' or ')' before '__path'
+  272 | int unlinkat(int __dirfd, const char* _Nonnull __path, int __flags);
+      |                                                ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:283:32: error: expected ';', ',' or ')' before '__path'
+  283 | int chdir(const char* _Nonnull __path);
+      |                                ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:296:32: error: expected ';', ',' or ')' before '__path'
+  296 | int rmdir(const char* _Nonnull __path);
+      |                                ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:297:20: error: '_Nonnull' undeclared here (not in a function)
+  297 | int pipe(int __fds[_Nonnull 2]);
+      |                    ^~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:297:28: error: expected ']' before numeric constant
+  297 | int pipe(int __fds[_Nonnull 2]);
+      |                            ^~
+      |                            ]
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:301:33: error: expected ';', ',' or ')' before '__path'
+  301 | int chroot(const char* _Nonnull __path);
+      |                                 ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:302:34: error: expected ';', ',' or ')' before '__old_path'
+  302 | int symlink(const char* _Nonnull __old_path, const char* _Nonnull __new_path);
+      |                                  ^~~~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:303:36: error: expected ';', ',' or ')' before '__old_path'
+  303 | int symlinkat(const char* _Nonnull __old_path, int __new_dir_fd, const char* _Nonnull __new_path);
+      |                                    ^~~~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:304:39: error: expected ';', ',' or ')' before '__path'
+  304 | ssize_t readlink(const char* _Nonnull __path, char* _Nonnull __buf, size_t __buf_size);
+      |                                       ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:305:55: error: expected ';', ',' or ')' before '__path'
+  305 | ssize_t readlinkat(int __dir_fd, const char* _Nonnull __path, char* _Nonnull __buf, size_t __buf_size);
+      |                                                       ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:306:32: error: expected ';', ',' or ')' before '__path'
+  306 | int chown(const char* _Nonnull __path, uid_t __owner, gid_t __group);
+      |                                ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:308:49: error: expected ';', ',' or ')' before '__path'
+  308 | int fchownat(int __dir_fd, const char* _Nonnull __path, uid_t __owner, gid_t __group, int __flags);
+      |                                                 ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:309:33: error: expected ';', ',' or ')' before '__path'
+  309 | int lchown(const char* _Nonnull __path, uid_t __owner, gid_t __group);
+      |                                 ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:310:17: error: expected '=', ',', ';', 'asm' or '__attribute__' before 'getcwd'
+  310 | char* _Nullable getcwd(char* _Nullable __buf, size_t __size);
+      |                 ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:333:60: error: expected ';', ',' or ')' before '__buf'
+  333 | ssize_t read(int __fd, void* __BIONIC_COMPLICATED_NULLNESS __buf, size_t __count);
+      |                                                            ^~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:345:67: error: expected ';', ',' or ')' before '__buf'
+  345 | ssize_t write(int __fd, const void* __BIONIC_COMPLICATED_NULLNESS __buf, size_t __count);
+      |                                                                   ^~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:361:35: error: expected ';', ',' or ')' before '__path'
+  361 | int truncate(const char* _Nonnull __path, off_t __length);
+      |                                   ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:363:40: error: expected ';', ',' or ')' before '__buf'
+  363 | ssize_t pread(int __fd, void* _Nonnull __buf, size_t __count, off_t __offset);
+      |                                        ^~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:364:47: error: expected ';', ',' or ')' before '__buf'
+  364 | ssize_t pwrite(int __fd, const void* _Nonnull __buf, size_t __count, off_t __offset);
+      |                                               ^~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:368:37: error: expected ';', ',' or ')' before '__path'
+  368 | int truncate64(const char* _Nonnull __path, off64_t __length);
+      |                                     ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:370:42: error: expected ';', ',' or ')' before '__buf'
+  370 | ssize_t pread64(int __fd, void* _Nonnull __buf, size_t __count, off64_t __offset);
+      |                                          ^~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:371:49: error: expected ';', ',' or ')' before '__buf'
+  371 | ssize_t pwrite64(int __fd, const void* _Nonnull __buf, size_t __count, off64_t __offset);
+      |                                                 ^~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:379:32: error: expected ';', ',' or ')' before '_buf'
+  379 | int gethostname(char* _Nonnull _buf, size_t __buf_size);
+      |                                ^~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:386:24: error: expected ';', ',' or ')' before '__addr'
+  386 | int brk(void* _Nonnull __addr);
+      |                        ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:387:17: error: expected '=', ',', ';', 'asm' or '__attribute__' before 'sbrk'
+  387 | void* _Nullable sbrk(ptrdiff_t __increment);
+      |                 ^~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:390:17: error: expected '=', ',', ';', 'asm' or '__attribute__' before 'ttyname'
+  390 | char* _Nullable ttyname(int __fd);
+      |                 ^~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:391:40: error: expected ';', ',' or ')' before '__buf'
+  391 | int ttyname_r(int __fd, char* _Nonnull __buf, size_t __buf_size);
+      |                                        ^~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:393:32: error: expected ';', ',' or ')' before '__path'
+  393 | int acct(const char* _Nullable __path);
+      |                                ^~~~~~
+In file included from /workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/legacy_unistd_inlines.h:36,
+                 from /workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/unistd.h:481:
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/bits/swab.h:42:53: error: expected ';', ',' or ')' before '__void_src'
+   42 | __BIONIC_SWAB_INLINE void swab(const void* _Nonnull __void_src, void* _Nonnull __void_dst, ssize_t __byte_count) {
+      |                                                     ^~~~~~~~~~
+In file included from /workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/sys/cdefs.h:336:
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/looper.h:235:9: error: 'strict' undeclared here (not in a function)
+  235 |         __REMOVED_IN(1,
+      |         ^~~~~~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/looper.h:235:9: error: 'obsoleted' undeclared here (not in a function)
+  235 |         __REMOVED_IN(1,
+      |         ^~~~~~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/looper.h:235:9: error: 'message' undeclared here (not in a function)
+  235 |         __REMOVED_IN(1,
+      |         ^~~~~~~~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/input.h:1082:52: error: 'introduced' undeclared here (not in a function)
+ 1082 | void AInputEvent_release(const AInputEvent* event) __INTRODUCED_IN(31);
+      |                                                    ^~~~~~~~~~~~~~~
+In file included from /workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/data_space.h:31,
+                 from /workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/native_window.h:40,
+                 from /workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/native_activity.h:36,
+                 from /workspace/scratch/de9e8fcd5e57/fastchat-disk/qualification/android-application-boundary/application-probe.c:6:
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/inttypes.h:332:41: error: expected ';', ',' or ')' before '__s'
+  332 | intmax_t strtoimax(const char* _Nonnull __s, char* _Nullable * _Nullable __end_ptr, int __base);
+      |                                         ^~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/inttypes.h:333:42: error: expected ';', ',' or ')' before '__s'
+  333 | uintmax_t strtoumax(const char* _Nonnull __s, char* _Nullable * _Nullable __end_ptr, int __base);
+      |                                          ^~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/inttypes.h:334:44: error: expected ';', ',' or ')' before '__s'
+  334 | intmax_t wcstoimax(const wchar_t* _Nonnull __s, wchar_t* _Nullable * _Nullable __end_ptr, int __base);
+      |                                            ^~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/inttypes.h:335:45: error: expected ';', ',' or ')' before '__s'
+  335 | uintmax_t wcstoumax(const wchar_t* _Nonnull __s, wchar_t* _Nullable * _Nullable __end_ptr, int __base);
+      |                                             ^~~
+In file included from /workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/native_window.h:41:
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/hardware_buffer.h:388:24: error: expected ':', ',', ';', '}' or '__attribute__' before 'data'
+  388 |     void*    _Nullable data; ///< Points to first byte in plane
+      |                        ^~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/hardware_buffer.h:422:67: error: expected ';', ',' or ')' before 'desc'
+  422 | int AHardwareBuffer_allocate(const AHardwareBuffer_Desc* _Nonnull desc,
+      |                                                                   ^~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/hardware_buffer.h:432:56: error: expected ';', ',' or ')' before 'buffer'
+  432 | void AHardwareBuffer_acquire(AHardwareBuffer* _Nonnull buffer) __INTRODUCED_IN(26);
+      |                                                        ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/hardware_buffer.h:440:56: error: expected ';', ',' or ')' before 'buffer'
+  440 | void AHardwareBuffer_release(AHardwareBuffer* _Nonnull buffer) __INTRODUCED_IN(26);
+      |                                                        ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/hardware_buffer.h:448:63: error: expected ';', ',' or ')' before 'buffer'
+  448 | void AHardwareBuffer_describe(const AHardwareBuffer* _Nonnull buffer,
+      |                                                               ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/hardware_buffer.h:503:52: error: expected ';', ',' or ')' before 'buffer'
+  503 | int AHardwareBuffer_lock(AHardwareBuffer* _Nonnull buffer, uint64_t usage, int32_t fence,
+      |                                                    ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/hardware_buffer.h:525:54: error: expected ';', ',' or ')' before 'buffer'
+  525 | int AHardwareBuffer_unlock(AHardwareBuffer* _Nonnull buffer, int32_t* _Nullable fence)
+      |                                                      ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/hardware_buffer.h:536:76: error: expected ';', ',' or ')' before 'buffer'
+  536 | int AHardwareBuffer_sendHandleToUnixSocket(const AHardwareBuffer* _Nonnull buffer, int socketFd)
+      |                                                                            ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/hardware_buffer.h:548:72: error: expected ';', ',' or ')' before '*' token
+  548 |                                              AHardwareBuffer* _Nullable* _Nonnull outBuffer)
+      |                                                                        ^
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/hardware_buffer.h:578:58: error: expected ';', ',' or ')' before 'buffer'
+  578 | int AHardwareBuffer_lockPlanes(AHardwareBuffer* _Nonnull buffer, uint64_t usage, int32_t fence,
+      |                                                          ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/hardware_buffer.h:601:70: error: expected ';', ',' or ')' before 'desc'
+  601 | int AHardwareBuffer_isSupported(const AHardwareBuffer_Desc* _Nonnull desc) __INTRODUCED_IN(29);
+      |                                                                      ^~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/hardware_buffer.h:614:62: error: expected ';', ',' or ')' before 'buffer'
+  614 | int AHardwareBuffer_lockAndGetInfo(AHardwareBuffer* _Nonnull buffer, uint64_t usage, int32_t fence,
+      |                                                              ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/hardware_buffer.h:629:59: error: expected ';', ',' or ')' before 'buffer'
+  629 | int AHardwareBuffer_getId(const AHardwareBuffer* _Nonnull buffer, uint64_t* _Nonnull outId)
+      |                                                           ^~~~~~
+/workspace/scratch/9a823f093abb/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/android/native_window.h:375:1: error: attributes should be specified before the declarator in a function definition
+  375 | inline int32_t ANativeWindow_clearFrameRate(ANativeWindow* window) __INTRODUCED_IN(31) {
+      | ^~~~~~

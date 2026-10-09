@@ -1,0 +1,76 @@
+name: FastChat Icky core
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Exact FastChat head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Qualified division-capable C producer
+        id: ick
+        uses: isomorphisms/ai-ci/ick-host@015cc7901ae0b3ad262b476f24e129b53c56db95
+      - name: Locate the exact C frontend
+        run: echo "ICK_SUPPORT=$(dirname "$("${{ steps.ick.outputs.compiler }}" -print-prog-name=cc1)")" >> "$GITHUB_ENV"
+      - name: Pinned Icky Lua runtime
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: isomorphisms/lua
+          ref: 87306483cec50f8c750a22dda1d0742246fad756
+          path: icky-lua
+          persist-credentials: false
+      - name: Shared build-toolchain contract
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: isomorphisms/ai-ci
+          ref: 8bf8be153f792c4def251287ed85543d1fe24f07
+          path: contract
+          persist-credentials: false
+      - name: Compile shared verifier through ICK
+        run: >
+          "${{ steps.ick.outputs.compiler }}" ${{ steps.ick.outputs.link_flags }}
+          -std=c11 -O2 contract/src/aici.c -o contract-check
+      - name: Required shared toolchain contract
+        run: ./contract-check verify contract/contracts/build-toolchain-v0.contract.tsv .
+      - name: Compile actual Icky Lua runtime through ICK
+        run: >
+          "${{ steps.ick.outputs.compiler }}" ${{ steps.ick.outputs.link_flags }}
+          -std=c11 -O2 -DMAKE_LIB -DLUA_USE_POSIX
+          -ffunction-sections -fdata-sections -Iicky-lua
+          -c icky-lua/onelua.c -o icky-lua.o
+      - name: Compile actual arrow C
+        run: >
+          "${{ steps.ick.outputs.compiler }}" ${{ steps.ick.outputs.link_flags }}
+          -std=c11 -D_FILE_OFFSET_BITS=64 -O2 -Wall -Wextra -Werror
+          -Isrc -Iicky-lua -DFC_POLICY_SOURCE='"policy/composition.lua"'
+          -ffunction-sections -fdata-sections
+          src/conversation.c src/render_policy.c src/fixture_transport.c
+          tests/conversation.c icky-lua.o -Wl,--gc-sections -lm -ldl -o core-tests
+      - name: Deterministic fault, transport and replay suite
+        run: ./core-tests
+      - name: Branch measurement
+        run: ./core-tests benchmark "$(cat ci/renderer-mode)" benchmark-store
+      - name: Fresh-process completed replay
+        run: ./core-tests replay benchmark-store
+      - name: RAM control in separate process
+        run: ./core-tests benchmark ram unused
+      - name: Canonical corpus
+        run: ./core-tests corpus corpus-store
+      - name: Preserve exact compiler and test evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: core-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            core-tests
+            corpus-store
+            benchmark-store
+            ${{ runner.temp }}/ick-host-stage/qualification
+            ${{ runner.temp }}/ick-host-stage/host-runtime.sha256
+

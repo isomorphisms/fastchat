@@ -1,0 +1,14 @@
+PASS actual Icky Lua composition, composer states, batched barriers, completion/loss/failure fixtures; policy_heap_peak=12637 limit=131072
+PASS malformed policy, instruction/heap bounds and invalid result fail closed; explicit reinitialization
+PASS giant framed input offer=1053469 logical_bytes=1048576 active_framing_peak=8203 fixed_framing_capacity=16384 renderer_queue_bytes=0
+PASS branch renderer policy, committed prefixes, UTF-8 visibility eligibility
+PASS empty, one/many chunks, every UTF-8 cut, disk-first visibility, duplicate terminal, completed replay
+PASS pending cancellation, chunks after cancel request, both terminal race orders, explicit failure
+PASS partial/short writes, exhaustion, failed barrier, interrupted replay, uncertainty, fresh retry, stale attempt, finish refuses unwritten received bytes
+PASS process death: committed prefix recoverable, uncommitted tail not completed
+PASS torn journal tail, interrupted terminal record, complete-record corruption rejected
+PASS explicit backpressure, giant offered chunk, bounded writes/view, slow renderer retains no queue
+PASS RAM control and disk exact completed logical response, sealed sinks
+PASS every SSE/JSON split, CRLF, keepalives, surrogate pair, Markdown/fence bytes, framed backpressure, truncated loss, malformed JSON rejection
+PASS streaming stored prefixes with incomplete UTF-8 withheld, tiny chunks, delimiters/fences preserved
+PASS C host storage/transport core; Android presentation is a separate gate
