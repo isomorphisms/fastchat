@@ -77,7 +77,7 @@ require a verified live A1 or C67 channel and exact artifact. Device automation
 belongs to Kitchen and independent evidence admission to ai-ci. Host fixtures
 are not physical-device receipts.
 
-## Local execution checkpoint
+## Initial local execution checkpoint (before publication approval)
 
 | Job | Result on 2026-10-14 |
 | --- | --- |
@@ -96,9 +96,20 @@ process it launched. Current-process logs expose exact source, store, request,
 attempt and durable extent. Posting remains a proxy rather than physical paint.
 
 Automatic approval review rejected publishing the FastChat branch twice, finally
-stating that execution did not provide explicit publication authority. No source
-was pushed, no PR created, and no release or merge occurred in this task. The
-four local branches are prepared for review and publication after approval.
+stating that execution did not provide explicit publication authority. At this
+initial checkpoint no source was pushed and no PR was created. The user then
+explicitly approved publication. The prepared branches are now published:
+
+- isomorphisms/fastchat PR #13, “FC-M1/M3/M5: qualify native reading controls and provider formats”: https://github.com/isomorphisms/fastchat/pull/13
+- isomorphisms/catfood PR #136, “FC-M4: classify captured Android identity without planning overrides”: https://github.com/isomorphisms/catfood/pull/136
+- isomorphisms/kitchen PR #52, “FC-M4: prepare bounded FastChat device capture and replay checks”: https://github.com/isomorphisms/kitchen/pull/52
+- isomorphisms/flexible-pipes PR #126, “FC-M1–M5: record execution envelope and qualified evidence boundaries”: https://github.com/isomorphisms/flexible-pipes/pull/126
+
+Publication resolves the initial publication blocker only. These are draft PRs;
+no merge or release was authorized or performed. Flexible Pipes owns the
+superseding execution receipt under `tasks/fastchat/outcomes.tsv` in its named
+branch. Physical-device, live-account and registered-producer requirements
+remain separate from source publication.
 
 Prepared branches: FastChat `work/fc-m1-m5-20261014`, Kitchen
 `work/fc-m4-device-capture-20261014`, Cat Food
