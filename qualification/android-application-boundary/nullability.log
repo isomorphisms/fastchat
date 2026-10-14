@@ -1,0 +1,3 @@
+/workspace/scratch/de9e8fcd5e57/fastchat-disk/qualification/android-application-boundary/nullability-probe.c:2:48: error: expected ';', ',' or ')' before 'required_value'
+    2 | int read_required_pointer(const int * _Nonnull required_value)
+      |                                                ^~~~~~~~~~~~~~

@@ -1,0 +1,27 @@
+#!/usr/bin/env grease
+# Qualification invokes the existing compiler/link and generic package routes.
+set -eu -o pipefail
+if (len(ARGV) !== 9) {
+  echo 'usage: qualify-reproducibility.grease ICK LIBEXEC NDK LUA HTTP2_PREFIX PACKAGER FIRST_NATIVE REPEAT_DIRECTORY OUTPUT_APK'
+  exit 2
+}
+var directory = $(dirname "$0")
+var repository = $(realpath "$directory/..")
+var runtime = ENV.FC_GREASE
+var compiler = ARGV[0]
+var support = ARGV[1]
+var ndk = ARGV[2]
+var lua = ARGV[3]
+var http2 = ARGV[4]
+var packager = ARGV[5]
+var first_native = ARGV[6]
+var repeated = ARGV[7]
+var output = ARGV[8]
+"$runtime" "$repository/scripts/build-native.grease" "$compiler" "$support" "$ndk" "$lua" "$repeated" "$http2"
+cmp "$first_native" "$repeated/libfastchat.so"
+"$runtime" "$repository/scripts/package-native.grease" "$packager" "$first_native" "$output"
+"$runtime" "$repository/scripts/package-native.grease" "$packager" "$repeated/libfastchat.so" "$repeated/repeated.apk"
+cmp "$output" "$repeated/repeated.apk"
+sha256sum "$first_native" "$repeated/libfastchat.so" "$output" "$repeated/repeated.apk" > "$repeated/reproducibility-digests.txt"
+cat "$repeated/reproducibility-digests.txt"
+echo 'PASS repeated ICK native build and maintained generic APK packaging produce identical bytes'

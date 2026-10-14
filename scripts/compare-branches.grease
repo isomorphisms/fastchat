@@ -1,0 +1,36 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 3) {
+  echo 'usage: compare-branches.grease DISK_FIRST_EXECUTABLE STREAMING_EXECUTABLE NEW_OUTPUT_DIRECTORY'
+  exit 2
+}
+var disk = ARGV[0]
+var streaming = ARGV[1]
+var output = ARGV[2]
+test -x "$disk"
+test -x "$streaming"
+test ! -e "$output"
+mkdir -p "$output/corpus-disk" "$output/corpus-streaming"
+sha256sum "$disk" "$streaming" > "$output/executables.txt"
+"$disk" > "$output/disk-tests.txt"
+"$streaming" > "$output/streaming-tests.txt"
+"$disk" corpus "$output/corpus-disk" > "$output/disk-corpus.tsv"
+"$streaming" corpus "$output/corpus-streaming" > "$output/streaming-corpus.tsv"
+cmp "$output/disk-corpus.tsv" "$output/streaming-corpus.tsv"
+for fixture in ([0, 1, 2]) {
+  for split in ([1, 2, 7, 257, 8192]) {
+    var directory = "fixture-$fixture-split-$split"
+    cmp "$output/corpus-disk/$directory/history.events" "$output/corpus-streaming/$directory/history.events"
+    cmp "$output/corpus-disk/$directory/attempt-1.bytes" "$output/corpus-streaming/$directory/attempt-1.bytes"
+  }
+}
+"$disk" benchmark disk-first "$output/benchmark-disk" > "$output/disk-measurements.tsv"
+"$streaming" benchmark streaming "$output/benchmark-streaming" > "$output/streaming-measurements.tsv"
+"$disk" benchmark ram unused > "$output/ram-measurements.tsv"
+"$disk" replay "$output/benchmark-disk" > "$output/disk-fresh-process-replay.tsv"
+"$streaming" replay "$output/benchmark-streaming" > "$output/streaming-fresh-process-replay.tsv"
+cmp "$output/benchmark-disk/history.events" "$output/benchmark-streaming/history.events"
+cmp "$output/benchmark-disk/attempt-1.bytes" "$output/benchmark-streaming/attempt-1.bytes"
+sha256sum "$output/benchmark-disk/history.events" "$output/benchmark-disk/attempt-1.bytes" > "$output/canonical-digests.txt"
+echo 'PASS same logical corpus, byte-identical canonical events/responses and completed replay; host measurements only' > "$output/comparison.txt"
+cat "$output/comparison.txt"

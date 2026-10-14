@@ -1,0 +1,31 @@
+field	value
+observed_at_utc	2026-10-07T02:58:01Z
+evidence_kind	host-owned-ick-frontend-syntax-probe
+host_os	Ubuntu 24.04.3 LTS
+host_machine	Linux 6.18.44 x86_64
+fastchat_base	b49f0f7083d2d034ba76b910a43592d6d07bd18b
+ick_inspected_main	e3c2a40b4edafc4d9caca55d1f7c094e6aab9589
+ick_compiler_checkout	7afb1820cd59c0c51d19a7e37902c14f4466f442
+gcc_reference	6294f1d9e7536e5ffcde09d1528c918d63abfef5
+ick_overlay_and_submodule_config_diff_exit	0
+compiler_version	GCC 17.0.0 20260813 experimental
+compiler_target	aarch64-linux-gnu
+consumer_target	MIRO A1 only
+driver_sha256	952d3ae0d5916e4d3030064d81cb193e1cbe1f8e706c556195f3d93d0bd42ba1
+cc1_sha256	2518c5d708f09163439576e0c69700a45ed6b3c4cc1daa609ae380536b729918
+arrow_probe_sha256	afecda98c162cb9ce6ff3e6bf7f8b8b960dcc207d76f3710dfb89f8bc7f15957
+control_probe_sha256	8a6c66a0094ab9e578275b82e5a21f58356dfff218c30b2793ebefef88a33013
+arrow_probe_exit	1
+arrow_probe_result	FAIL
+arrow_probe_diagnostic	assignment arrow U+2190 rejected as stray character
+ordinary_c_control_exit	0
+ordinary_c_control_result	PASS syntax only
+compiler_substitution	none
+whole_c_pass	BLOCKED/NOT_RUN
+lua_refactor	BLOCKED/NOT_RUN
+storage_tests	BLOCKED/NOT_RUN
+comparison	BLOCKED/NOT_RUN
+a1_object	BLOCKED/NOT_RUN
+a1_apk	BLOCKED/NOT_RUN
+a1_artifact_sha256	NOT_AVAILABLE
+physical_a1	BLOCKED/NOT_RUN

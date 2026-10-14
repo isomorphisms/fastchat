@@ -1,0 +1,3 @@
+191660 /workspace/scratch/32c5a6cc422f/fc-s1-final-native/libfastchat.debug.so
+163552 /workspace/scratch/32c5a6cc422f/fc-s1-final-native/libfastchat.so
+355212 total

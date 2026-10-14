@@ -1,0 +1,66 @@
+diff --git a/lib/http2.c b/lib/http2.c
+index 7be5abd..919d2bc 100644
+--- a/lib/http2.c
++++ b/lib/http2.c
+@@ -60,13 +60,13 @@
+  * use 16K as chunk size, as that fits H2 DATA frames well */
+ #define H2_CHUNK_SIZE           (16 * 1024)
+ /* connection window size */
+-#define H2_CONN_WINDOW_SIZE     (10 * 1024 * 1024)
++#define H2_CONN_WINDOW_SIZE     (256 * 1024)
+ /* on receiving from TLS, we prep for holding a full stream window */
+ #define H2_NW_RECV_CHUNKS       (H2_CONN_WINDOW_SIZE / H2_CHUNK_SIZE)
+ /* on send into TLS, we want to accumulate small frames */
+ #define H2_NW_SEND_CHUNKS       1
+ /* this is how much we want "in flight" for a stream, unthrottled */
+-#define H2_STREAM_WINDOW_SIZE_MAX   (10 * 1024 * 1024)
++#define H2_STREAM_WINDOW_SIZE_MAX   (64 * 1024)
+ /* this is how much we want "in flight" for a stream, initially, IFF
+  * nghttp2 allows us to tweak the local window size. */
+ #if NGHTTP2_HAS_SET_LOCAL_WINDOW_SIZE
+diff --git a/lib/transfer.c b/lib/transfer.c
+index fd1a903..13b6979 100644
+--- a/lib/transfer.c
++++ b/lib/transfer.c
+@@ -679,6 +679,9 @@ CURLcode Curl_retry_request(struct Curl_easy *data, char **url)
+     retry = TRUE;
+   }
+   if(retry) {
++    /* FastChat owns attempt identity. Never replay a request inside an engine. */
++    failf(data, "FastChat attempt ended; explicit retry required");
++    return CURLE_SEND_ERROR;
+ #define CONN_MAX_RETRIES 5
+     if(data->state.retrycount++ >= CONN_MAX_RETRIES) {
+       failf(data, "Connection died, tried %d times before giving up",
+diff --git a/lib/vquic/curl_ngtcp2.c b/lib/vquic/curl_ngtcp2.c
+index 8cf3886..a879ffa 100644
+--- a/lib/vquic/curl_ngtcp2.c
++++ b/lib/vquic/curl_ngtcp2.c
+@@ -70,15 +70,15 @@
+ #include "vquic/curl_ngtcp2.h"
+ 
+ 
+-#define QUIC_MAX_STREAMS       (256 * 1024)
++#define QUIC_MAX_STREAMS       16
+ #define QUIC_HANDSHAKE_TIMEOUT (10 * NGTCP2_SECONDS)
+ 
+ /* We announce a small window size in transport param to the server,
+  * and grow that immediately to max when no rate limit is in place.
+  * We need to start small as we are not able to decrease it. */
+ #define H3_STREAM_WINDOW_SIZE_INITIAL (32 * 1024)
+-#define H3_STREAM_WINDOW_SIZE_MAX     (10 * 1024 * 1024)
+-#define H3_CONN_WINDOW_SIZE_MAX       (100 * H3_STREAM_WINDOW_SIZE_MAX)
++#define H3_STREAM_WINDOW_SIZE_MAX     (64 * 1024)
++#define H3_CONN_WINDOW_SIZE_MAX       (4 * H3_STREAM_WINDOW_SIZE_MAX)
+ 
+ #define H3_STREAM_CHUNK_SIZE  (64 * 1024)
+ #if H3_STREAM_CHUNK_SIZE < NGTCP2_MAX_UDP_PAYLOAD_SIZE
+@@ -92,7 +92,7 @@
+  * have a large upload done, etc. */
+ #define H3_STREAM_POOL_SPARES      2
+ /* The max amount of un-acked upload data we keep around per stream */
+-#define H3_STREAM_SEND_BUFFER_MAX      (10 * 1024 * 1024)
++#define H3_STREAM_SEND_BUFFER_MAX      (64 * 1024)
+ #define H3_STREAM_SEND_CHUNKS \
+   (H3_STREAM_SEND_BUFFER_MAX / H3_STREAM_CHUNK_SIZE)
+ 

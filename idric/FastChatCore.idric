@@ -816,3 +816,47 @@ read_view
 public export
 event_count : List stored_event → Number
 event_count = length
+
+-- The bounded native lowering is checked against the same actual admission
+-- function, rather than a second handwritten transition model.
+native_phase : Number → request_phase
+native_phase 1 = submitted_phase
+native_phase 2 = streaming_phase
+native_phase 3 = cancellation_pending
+native_phase 4 = delivery_uncertain "fixture"
+native_phase 5 = completed_phase
+native_phase 6 = cancelled_phase
+native_phase _ = provider_failed "fixture"
+
+native_event : Number → model_event
+native_event 2 = response_started (request 1) (attempt 1)
+native_event 3 = response_chunk (request 1) (attempt 1) "bytes"
+native_event 4 = response_completed (request 1) (attempt 1)
+native_event 6 = response_cancelled (request 1) (attempt 1)
+native_event 7 = response_failed (request 1) (attempt 1) "failure"
+native_event 8 = response_connection_lost (request 1) (attempt 1) "loss"
+native_event _ = response_tool (request 1) (attempt 1) "payload"
+
+native_admitted : Number → Number → Bool
+native_admitted 0 _ = False
+native_admitted phase 5 =
+  case cancel_entry (request_record (request 1) (attempt 1) (native_phase phase) (text_prompt "prompt") []) of
+    cancellation_changed _ _ ⇒ True
+    _ ⇒ False
+native_admitted phase event =
+  case admit_model_event (native_event event)
+         (request_record (request 1) (attempt 1) (native_phase phase) (text_prompt "prompt") []) of
+    accepted _ _ ⇒ True
+    _ ⇒ False
+
+native_mask_parts : Number → List Number → List Number → Number
+native_mask_parts phase [] _ = 0
+native_mask_parts phase _ [] = 0
+native_mask_parts phase (event :: rest) (weight :: weights) =
+  (if native_admitted phase event then weight else 0) +
+  native_mask_parts phase rest weights
+
+public export
+native_transition_mask : Number → Number
+native_transition_mask phase =
+  native_mask_parts phase [2,3,4,5,6,7,8,11] [4,8,16,32,64,128,256,2048]

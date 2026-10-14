@@ -1,0 +1,23 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 3) {
+  echo 'usage: compare-passes.grease C_COMPARISON_DIRECTORY LUA_COMPARISON_DIRECTORY OUTPUT_RECEIPT'
+  exit 2
+}
+var before = ARGV[0]
+var after = ARGV[1]
+var output = ARGV[2]
+for branch in (['disk', 'streaming']) {
+  for fixture in ([0, 1, 2]) {
+    for split in ([1, 2, 7, 257, 8192]) {
+      var directory = "corpus-$branch/fixture-$fixture-split-$split"
+      cmp "$before/$directory/history.events" "$after/$directory/history.events"
+      cmp "$before/$directory/attempt-1.bytes" "$after/$directory/attempt-1.bytes"
+    }
+  }
+  cmp "$before/benchmark-$branch/history.events" "$after/benchmark-$branch/history.events"
+  cmp "$before/benchmark-$branch/attempt-1.bytes" "$after/benchmark-$branch/attempt-1.bytes"
+}
+echo 'PASS both branches: C checkpoint and C + actual Icky Lua have byte-identical completed events/responses for all 15 fixture/split stores and the 8 MiB response' > "$output"
+cat "$output"
+

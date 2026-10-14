@@ -1,0 +1,27 @@
+gate	status	evidence
+main_base	RECORDED	b49f0f7083d2d034ba76b910a43592d6d07bd18b
+disk_first_source	RECORDED	6dff84f007213b275ed0ffb6bde151769b5bcac0
+streaming_source	RECORDED	eeee961cd60cf9281295eb318f2c3fb362385e74
+host_target	RECORDED	Ubuntu 24.04.3 LTS; Linux 6.18.44 x86_64; disposable producer; overlayfs; cache unspecified
+ick_source	RECORDED	515c0f29fe6e2e96e10495fbaf25da93532e7722
+gcc_reference	RECORDED	6294f1d9e7536e5ffcde09d1528c918d63abfef5
+icky_lua_source	RECORDED	87306483cec50f8c750a22dda1d0742246fad756
+packager_source	RECORDED	7c61ee43e75f7c2dab9288edb0e10055898b36e6
+host_tests	PASS	disk-tests.txt; streaming-tests.txt; executables.txt
+completion_backpressure_guard	PASS	finish refuses unwritten received bytes; disk-tests.txt; streaming-tests.txt
+sibling_corpus_and_8mib	PASS	comparison.txt; canonical-digests.txt
+c_to_lua_completed_history	PASS	c-to-lua.txt
+fresh_process_replay	PASS	disk-fresh-process-replay.tsv; streaming-fresh-process-replay.tsv; filesystem cache unspecified
+shared_ai_ci_contract	PASS	build-toolchain-contract.jsonl; 6 assertions; explicit NDK CRT/linker/runtime gap
+exact_source_ci	PASS	producer-ci.tsv; both host-core and APK workflows
+native_compile_and_link	PASS	native-abi.txt; native-digests.txt; native-sizes.txt; ICK compiles all C including foreign Lua
+apk_packaging_and_signer	PASS	apk.receipt.tsv; 94751 APK bytes; versionCode 2
+disk_first_apk_sha256	RECORDED	b1e83c6ba9c1c6948b47dcb16817ff952c3a4dbf5bb3625bf2e7fa3e79ef4143
+streaming_apk_sha256	RECORDED	3404728effa8267ab18f9095acd5ba15019acd26333219294b0840d69de0e2c5
+policy_heap_peak	PASS	12637 bytes observed; 131072-byte limit; disk-tests.txt
+transport_active_peak	PASS	8203 bytes observed; two fixed 8192-byte buffers; disk-tests.txt
+write_and_view_limits	PASS	4096 bytes; disk-measurements.tsv; streaming-measurements.tsv
+renderer_queue	PASS	0 queued bytes; bounded file window only
+physical_a1_install_launch	BLOCKED/NOT_RUN	No physical A1 execution path available
+physical_a1_ime_canvas_lifecycle	BLOCKED/NOT_RUN	No physical device receipt
+physical_a1_rss_cpu_visible_latency_replay	BLOCKED/NOT_RUN	Host reads and buffer-post logs do not establish physical visibility
