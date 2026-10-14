@@ -21,12 +21,27 @@ server.on('stream', (stream, headers) => {
     if (path.startsWith('/candidate-')) {
       let request;
       try { request = JSON.parse(body); } catch { stream.respond({':status': 400}); stream.end(); return; }
-      if (request.model !== 'fixture' || request.stream !== true || request.messages[0].content !== 'fixture') {
+      const expected = path === '/candidate-responses'
+        ? {model: 'fixture', stream: true, input: 'fixture'}
+        : {model: 'fixture', stream: true, messages: [{role: 'user', content: 'fixture'}]};
+      if (JSON.stringify(request) !== JSON.stringify(expected)) {
         stream.respond({':status': 400}); stream.end(); return;
       }
       stream.respond({':status': 200, 'content-type': 'text/event-stream'});
       const write = value => stream.write(`data: ${JSON.stringify(value)}\r\n\r\n`);
       const delta = text => ({type: 'response.output_text.delta', delta: text});
+      if (path === '/candidate-usage') {
+        write({choices: [{index: 0, delta: {content: 'usage fixture'}, finish_reason: null}]});
+        write({choices: [], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}});
+        stream.end('data: [DONE]\n\n'); return;
+      }
+      if (path === '/candidate-responses') {
+        write({type: 'response.created', response: {id: 'resp_fixture', status: 'in_progress'}});
+        write({type: 'response.reasoning_summary_part.added', item_id: 'rs_fixture', summary_index: 0, part: {type: 'summary_text', text: ''}});
+        write({type: 'response.reasoning_summary_text.delta', item_id: 'rs_fixture', summary_index: 0, delta: 'Checking'});
+        write({type: 'response.reasoning_summary_text.done', item_id: 'rs_fixture', summary_index: 0, text: 'Checking'});
+        write({type: 'response.reasoning_summary_part.done', item_id: 'rs_fixture', summary_index: 0, part: {type: 'summary_text', text: 'Checking'}});
+      }
       if (path === '/candidate-failure') { write({type: 'response.failed', response: {status: 'failed'}}); stream.end(); return; }
       if (path === '/candidate-bad') { stream.end('data: {"type":"response.output_text.delta","delta":7}\n\n'); return; }
       if (path === '/candidate-giant') { stream.end(`data: ${'x'.repeat(9000)}\n\n`); return; }

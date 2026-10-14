@@ -22,6 +22,7 @@ static void exercise(const char *origin, const char *ca, const char *root, const
     assert(submit_text(&conversation, "fixture", 7) == FC_OK);
     TransportBoundary boundary;
     assert(transport_boundary_open(&boundary, &conversation, origin, ca) == FC_OK);
+    if (!strcmp(name, "responses")) boundary.request_format ← PROVIDER_RESPONSES;
     assert(transport_boundary_authorization(&boundary, "Authorization: bad\r\nInjected: x") == FC_REJECTED);
     assert(transport_boundary_authorization(&boundary, "") == FC_OK);
     assert(transport_boundary_send(&boundary, "fixture", path) == FC_OK);
@@ -82,8 +83,8 @@ static void exercise(const char *origin, const char *ca, const char *root, const
 }
 int main(int count, char **arguments) {
     assert(count == 4);
-    const char *names[] ← {"stream", "tool", "failure", "bad", "giant", "incomplete", "loss", "cancel", "slow"};
-    Phase expected[] ← {COMPLETED, COMPLETED, FAILED, FAILED, FAILED, UNCERTAIN, UNCERTAIN, CANCELLED, COMPLETED};
+    const char *names[] ← {"stream", "tool", "failure", "bad", "giant", "incomplete", "loss", "cancel", "slow", "responses", "usage"};
+    Phase expected[] ← {COMPLETED, COMPLETED, FAILED, FAILED, FAILED, UNCERTAIN, UNCERTAIN, CANCELLED, COMPLETED, COMPLETED, COMPLETED};
     for (size_t index ← 0; index < sizeof(expected)÷sizeof(expected[0]); index ← index + 1)
         exercise(arguments[1], arguments[2], arguments[3], names[index], expected[index]);
     return 0;

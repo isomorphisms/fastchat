@@ -66,8 +66,8 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           repository: dilapidated-shed/grease
-          run-id: 37478624499
-          artifact-ids: 11419719229
+          run-id: 38206821183
+          artifact-ids: 11727693085
           github-token: ${{ github.token }}
           merge-multiple: true
           path: grease

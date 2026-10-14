@@ -26,3 +26,13 @@ That scheduling restriction does not change a request's event semantics.
 First Idriç capability boundary: native ARM/Thumb FFI/core integration lacks an
 execution receipt. Acceptance would run these same entry transitions through
 the target backend with file effects, rather than only host semantic fixtures.
+
+FC-M3/FC-M5 continuation (2026-10-14): native presentation remains the existing
+Icky C/JNI owner. New values are bounded page UTF-8 bytes, their UTF-16 platform
+representation, line/fence state, and an explicit provider request format.
+Selection must preserve scalar values, page motion must preserve byte offsets,
+and provider formats must share the same canonical request/attempt lifecycle.
+The request-format enum changes wire adaptation only. No new Idriç backend,
+generated-C fallback, tool execution or lifecycle is introduced. Exact native
+ARM/Thumb FFI execution is still the upstream language boundary; UI receipts
+cannot substitute for it.

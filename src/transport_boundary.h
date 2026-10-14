@@ -8,6 +8,7 @@ typedef struct {
     fc_transport *engine;
     int active, pending;
     Event pending_event;
+    ProviderRequestFormat request_format;
 } TransportBoundary;
 Result transport_boundary_open(TransportBoundary *, Conversation *, const char *origin, const char *ca);
 Result transport_boundary_send(TransportBoundary *, const char *model, const char *path);

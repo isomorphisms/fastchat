@@ -40,10 +40,14 @@ typedef struct {
     unsigned fixture_step;
     size_t wire_offset, page_count;
     uint64_t previous_pages[64], began_ns;
+    unsigned char previous_fences[64], previous_line_starts[64];
+    int fenced, line_start, next_fenced, next_line_start;
     uint64_t created_ns, generation_cpu_ns;
     uint64_t viewport, next_viewport, last_barrier_ns, terminal_ns, first_posted_ns;
     float density;
     int width, height, content_bottom;
+    float touch_x, touch_y;
+    int touch_down;
     char message[160];
 } Presentation;
 
@@ -129,10 +133,28 @@ static void draw_line(JNIEnv *environment, jobject canvas, jobject paint, const 
 }
 static size_t draw_bytes(JNIEnv *environment, jobject canvas, jobject paint,
                          const unsigned char *bytes, size_t length, float x, float *y,
-                         float line_height, unsigned columns, float bottom) {
+                         float line_height, unsigned columns, float bottom,
+                         int *fenced, int *logical_line_start) {
     jchar line[256];
     size_t position ← 0;
     while (position < length && *y <= bottom) {
+        int heading ← 0;
+        if (fenced && *logical_line_start) {
+            if (length - position >= 3 && !memcmp(bytes+position, "```", 3)) *fenced ← !*fenced;
+            size_t markers ← 0;
+            while (markers < 6 && position+markers < length && bytes[position+markers] == '#') markers++;
+            heading ← !*fenced && markers && position+markers < length && bytes[position+markers] == ' ';
+        }
+        (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setFakeBoldText", "(Z)V"), heading ? JNI_TRUE : JNI_FALSE);
+        jclass typeface_type ← (*environment)->FindClass(environment, "android/graphics/Typeface");
+        const char *face ← fenced && *fenced ? "MONOSPACE" : "DEFAULT";
+        jobject typeface ← (*environment)->GetStaticObjectField(environment, typeface_type,
+            (*environment)->GetStaticFieldID(environment, typeface_type, face, "Landroid/graphics/Typeface;"));
+        jobject prior_face ← (*environment)->CallObjectMethod(environment, paint,
+            method(environment, paint, "setTypeface", "(Landroid/graphics/Typeface;)Landroid/graphics/Typeface;"), typeface);
+        if (prior_face) (*environment)->DeleteLocalRef(environment, prior_face);
+        (*environment)->DeleteLocalRef(environment, typeface);
+        (*environment)->DeleteLocalRef(environment, typeface_type);
         size_t units ← 0;
         unsigned cells ← 0;
         size_t line_start ← position;
@@ -142,6 +164,7 @@ static size_t draw_bytes(JNIEnv *environment, jobject canvas, jobject paint,
             unsigned width ← codepoint >= 0x1100 ? 2 : 1;
             if (codepoint != '\n' && cells + width > columns && units) break;
             position ← next;
+            if (logical_line_start) *logical_line_start ← codepoint == '\n';
             if (codepoint == '\n') break;
             if (codepoint == '\r') continue;
             if (codepoint == '\t') codepoint ← ' ';
@@ -159,6 +182,7 @@ static size_t draw_bytes(JNIEnv *environment, jobject canvas, jobject paint,
         draw_line(environment, canvas, paint, line, units, x, *y);
         *y ← *y + line_height;
     }
+    (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setFakeBoldText", "(Z)V"), JNI_FALSE);
     return position;
 }
 static void draw_label(JNIEnv *environment, jobject canvas, jobject paint, const char *label,
@@ -168,6 +192,82 @@ static void draw_label(JNIEnv *environment, jobject canvas, jobject paint, const
     (*environment)->CallVoidMethod(environment, canvas,
         method(environment, canvas, "drawText", "(Ljava/lang/String;FFLandroid/graphics/Paint;)V"), text, x, y, paint);
     (*environment)->DeleteLocalRef(environment, text);
+}
+/* Android's own selectable TextView supplies handles/copy for the current
+   bounded disk window. It neither loads nor retains the whole response. */
+static void select_page(Presentation *presentation) {
+    unsigned char bytes[FC_VIEW_BYTES];
+    size_t length ← 0;
+    Result result ← presentation->viewed_request
+        ? read_history_window(&presentation->conversation, &presentation->selected_turn,
+                              presentation->viewport, bytes, sizeof(bytes), &length)
+        : render_stored_window(&presentation->conversation, presentation->viewport,
+                               bytes, sizeof(bytes), &length);
+    if (result != FC_OK || !length) return;
+    uint64_t displayed ← presentation->next_viewport - presentation->viewport;
+    if (presentation->next_viewport > presentation->viewport && displayed < length) length ← (size_t)displayed;
+    int valid;
+    if (complete_utf8_prefix(bytes, length, &valid) != length || !valid) {
+        report_problem(presentation, "Stored page has invalid UTF-8"); return;
+    }
+    jchar units[FC_VIEW_BYTES];
+    size_t count ← 0;
+    for (size_t position ← 0; position < length;) {
+        unsigned codepoint ← decode_codepoint(bytes, &position);
+        if (codepoint > 0xffff) {
+            codepoint ← codepoint - 0x10000;
+            units[count++] ← (jchar)(0xd800 | (codepoint >> 10));
+            units[count++] ← (jchar)(0xdc00 | (codepoint & 0x3ff));
+        } else units[count++] ← (jchar)codepoint;
+    }
+    JNIEnv *environment ← presentation->activity->env;
+    if ((*environment)->PushLocalFrame(environment, 24) < 0) return;
+    jclass text_type ← (*environment)->FindClass(environment, "android/widget/TextView");
+    jobject text ← (*environment)->NewObject(environment, text_type,
+        (*environment)->GetMethodID(environment, text_type, "<init>", "(Landroid/content/Context;)V"), presentation->activity->clazz);
+    jstring page ← (*environment)->NewString(environment, units, (jsize)count);
+    (*environment)->CallVoidMethod(environment, text, method(environment, text, "setText", "(Ljava/lang/CharSequence;)V"), page);
+    (*environment)->CallVoidMethod(environment, text, method(environment, text, "setTextIsSelectable", "(Z)V"), JNI_TRUE);
+    (*environment)->CallVoidMethod(environment, text, method(environment, text, "setTextSize", "(F)V"), 18.0);
+    (*environment)->CallVoidMethod(environment, text, method(environment, text, "setPadding", "(IIII)V"), 16, 16, 16, 16);
+    jclass scroll_type ← (*environment)->FindClass(environment, "android/widget/ScrollView");
+    jobject scroll ← (*environment)->NewObject(environment, scroll_type,
+        (*environment)->GetMethodID(environment, scroll_type, "<init>", "(Landroid/content/Context;)V"), presentation->activity->clazz);
+    (*environment)->CallVoidMethod(environment, scroll, method(environment, scroll, "addView", "(Landroid/view/View;)V"), text);
+    jclass builder_type ← (*environment)->FindClass(environment, "android/app/AlertDialog$Builder");
+    jobject builder ← (*environment)->NewObject(environment, builder_type,
+        (*environment)->GetMethodID(environment, builder_type, "<init>", "(Landroid/content/Context;)V"), presentation->activity->clazz);
+    (*environment)->CallObjectMethod(environment, builder, method(environment, builder, "setView", "(Landroid/view/View;)Landroid/app/AlertDialog$Builder;"), scroll);
+    jstring title ← (*environment)->NewStringUTF(environment, "Select and copy this stored page");
+    (*environment)->CallObjectMethod(environment, builder, method(environment, builder, "setTitle", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;"), title);
+    jstring done ← (*environment)->NewStringUTF(environment, "Done");
+    (*environment)->CallObjectMethod(environment, builder, method(environment, builder, "setPositiveButton", "(Ljava/lang/CharSequence;Landroid/content/DialogInterface$OnClickListener;)Landroid/app/AlertDialog$Builder;"), done, NULL);
+    (*environment)->CallObjectMethod(environment, builder, method(environment, builder, "show", "()Landroid/app/AlertDialog;"));
+    clear_java_failure(presentation, environment);
+    (*environment)->PopLocalFrame(environment, NULL);
+}
+static void page_response(Presentation *presentation, int forward) {
+    if (!forward) {
+        if (presentation->page_count) {
+            size_t page ← --presentation->page_count;
+            presentation->viewport ← presentation->previous_pages[page];
+            presentation->fenced ← presentation->previous_fences[page];
+            presentation->line_start ← presentation->previous_line_starts[page];
+        } else { presentation->viewport ← 0; presentation->fenced ← 0; presentation->line_start ← 1; }
+    } else if (presentation->next_viewport > presentation->viewport) {
+        if (presentation->page_count == 64) {
+            memmove(presentation->previous_pages, presentation->previous_pages+1, 63*sizeof(uint64_t));
+            memmove(presentation->previous_fences, presentation->previous_fences+1, 63);
+            memmove(presentation->previous_line_starts, presentation->previous_line_starts+1, 63);
+            presentation->page_count ← 63;
+        }
+        presentation->previous_pages[presentation->page_count] ← presentation->viewport;
+        presentation->previous_fences[presentation->page_count] ← (unsigned char)presentation->fenced;
+        presentation->previous_line_starts[presentation->page_count++] ← (unsigned char)presentation->line_start;
+        presentation->viewport ← presentation->next_viewport;
+        presentation->fenced ← presentation->next_fenced;
+        presentation->line_start ← presentation->next_line_start;
+    }
 }
 static void present_stored_response(Presentation *presentation) {
     if (!presentation->window) return;
@@ -206,14 +306,14 @@ static void present_stored_response(Presentation *presentation) {
     draw_label(environment, canvas, paint, heading, 16*density, 28*density, 14*density);
     draw_label(environment, canvas, paint, phase_name(selected.phase), 16*density, 52*density, 16*density);
     draw_label(environment, canvas, paint, "Older turn       Newer turn       Latest", 16*density, 82*density, 15*density);
-    draw_label(environment, canvas, paint, "Previous page     Next page     Beginning", 16*density, 106*density, 15*density);
+    draw_label(environment, canvas, paint, "Previous       Next       Start       Copy", 16*density, 106*density, 15*density);
     float y ← 140*density;
     unsigned columns ← (unsigned)((presentation->width - 32*density) ÷ (11*density));
     if (columns < 8) columns ← 8;
     (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setTextSize", "(F)V"), 18*density);
     if (selected_result == FC_OK && selected.prompt_length) {
         draw_bytes(environment, canvas, paint, (const unsigned char *)selected.prompt,
-                   selected.prompt_length, 16*density, &y, 24*density, columns, 186*density);
+                   selected.prompt_length, 16*density, &y, 24*density, columns, 186*density, NULL, NULL);
         y ← y + 12*density;
     }
     unsigned char bytes[FC_VIEW_BYTES];
@@ -224,8 +324,11 @@ static void present_stored_response(Presentation *presentation) {
         : render_stored_window(&presentation->conversation, presentation->viewport, bytes, sizeof(bytes), &length);
     if (read != FC_OK) report_problem(presentation, "Stored text cannot be displayed");
     else if (length) {
+        presentation->next_fenced ← presentation->fenced;
+        presentation->next_line_start ← presentation->line_start;
         size_t displayed ← draw_bytes(environment, canvas, paint, bytes, length, 16*density, &y,
-                                      24*density, columns, bottom - 112*density);
+                                      24*density, columns, bottom - 112*density,
+                                      &presentation->next_fenced, &presentation->next_line_start);
         presentation->next_viewport ← presentation->viewport + displayed;
         posted_text ← displayed > 0;
     } else {
@@ -246,6 +349,7 @@ static void present_stored_response(Presentation *presentation) {
         presentation->first_posted_ns ← monotonic_ns();
         if (presentation->began_ns) __android_log_print(ANDROID_LOG_INFO, "FastChat", "first_posted_ns=%llu",
             (unsigned long long)(presentation->first_posted_ns - presentation->began_ns));
+        if (presentation->began_ns) log_measurements(presentation);
     }
     if (posted && presentation->terminal_ns && presentation->conversation.phase == COMPLETED) {
         __android_log_print(ANDROID_LOG_INFO, "FastChat", "terminal_to_completed_post_ns=%llu request=%llu attempt=%llu",
@@ -270,7 +374,10 @@ static void create_composer(Presentation *presentation) {
     jclass edit_type ← (*environment)->FindClass(environment, "android/widget/EditText");
     jobject edit ← (*environment)->NewObject(environment, edit_type,
         (*environment)->GetMethodID(environment, edit_type, "<init>", "(Landroid/content/Context;)V"), activity);
-    (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setSingleLine", "(Z)V"), JNI_TRUE);
+    (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setInputType", "(I)V"), 0x20001); /* text + multiline */
+    (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setMinLines", "(I)V"), 1);
+    (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setMaxLines", "(I)V"), 3);
+    (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setImeOptions", "(I)V"), 0x10000000); /* no fullscreen extraction */
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setTextSize", "(F)V"), 18.0);
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setTextColor", "(I)V"), (jint)0xff24282b);
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setBackgroundColor", "(I)V"), (jint)0xffe4e6df);
@@ -348,6 +455,8 @@ static void send_or_cancel(Presentation *presentation) {
     } else if ((action == POLICY_RETRY ? retry_request(&presentation->conversation) :
                 action == POLICY_SUBMIT ? submit_composer(presentation) : FC_REJECTED) == FC_OK) {
         presentation->viewport ← 0;
+        presentation->fenced ← 0;
+        presentation->line_start ← 1;
         presentation->viewed_request ← 0;
         presentation->first_posted_ns ← 0;
         presentation->terminal_ns ← 0;
@@ -384,10 +493,31 @@ static int on_input(int descriptor, int events, void *context) {
         if (AInputQueue_preDispatchEvent(presentation->input, event)) continue;
         int handled ← 0;
         if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION &&
+            (AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK) == AMOTION_EVENT_ACTION_DOWN) {
+            presentation->touch_x ← AMotionEvent_getX(event, 0);
+            presentation->touch_y ← AMotionEvent_getY(event, 0);
+            presentation->touch_down ← 1;
+            int bottom ← presentation->content_bottom > 0 ? presentation->content_bottom : presentation->height;
+            handled ← presentation->touch_y > 120*presentation->density && presentation->touch_y < bottom - 112*presentation->density;
+        }
+        if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION &&
+            (AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK) == AMOTION_EVENT_ACTION_CANCEL)
+            presentation->touch_down ← 0;
+        if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION &&
             (AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK) == AMOTION_EVENT_ACTION_UP) {
             float x ← AMotionEvent_getX(event, 0), y ← AMotionEvent_getY(event, 0);
             int bottom ← presentation->content_bottom > 0 ? presentation->content_bottom : presentation->height;
-            if (y > bottom - 72*presentation->density && x > presentation->width - 104*presentation->density) {
+            float vertical ← y - presentation->touch_y, horizontal ← x - presentation->touch_x;
+            if (presentation->touch_down && presentation->touch_y > 120*presentation->density &&
+                presentation->touch_y < bottom - 112*presentation->density &&
+                (vertical > 48*presentation->density || vertical < -48*presentation->density) &&
+                vertical*vertical > horizontal*horizontal) {
+                page_response(presentation, vertical < 0);
+                present_stored_response(presentation); handled ← 1;
+            } else if (presentation->touch_down &&
+                       (vertical*vertical + horizontal*horizontal > 256*presentation->density*presentation->density)) {
+                handled ← 1; /* A drag must not activate a toolbar or Send. */
+            } else if (y > bottom - 72*presentation->density && x > presentation->width - 104*presentation->density) {
                 send_or_cancel(presentation); handled ← 1;
             } else if (y > 60*presentation->density && y < 90*presentation->density) {
                 uint64_t selected ← presentation->viewed_request ? presentation->viewed_request : presentation->conversation.request;
@@ -400,25 +530,21 @@ static int on_input(int descriptor, int events, void *context) {
                     report_problem(presentation, "Stored history cannot be selected");
                 }
                 presentation->viewport ← 0;
+                presentation->fenced ← 0;
+                presentation->line_start ← 1;
                 presentation->page_count ← 0;
                 present_stored_response(presentation); handled ← 1;
             } else if (y >= 90*presentation->density && y < 120*presentation->density) {
-                if (x < presentation->width÷3) {
-                    if (presentation->page_count) {
-                        presentation->page_count ← presentation->page_count - 1;
-                        presentation->viewport ← presentation->previous_pages[presentation->page_count];
-                    } else presentation->viewport ← 0;
-                } else if (x < 2*presentation->width÷3 && presentation->next_viewport > presentation->viewport) {
-                    if (presentation->page_count == 64) {
-                        memmove(presentation->previous_pages, presentation->previous_pages+1, 63*sizeof(uint64_t));
-                        presentation->page_count ← 63;
-                    }
-                    presentation->previous_pages[presentation->page_count] ← presentation->viewport;
-                    presentation->page_count ← presentation->page_count + 1;
-                    presentation->viewport ← presentation->next_viewport;
-                } else if (x >= 2*presentation->width÷3) { presentation->viewport ← 0; presentation->page_count ← 0; }
+                if (x < presentation->width÷4) page_response(presentation, 0);
+                else if (x < presentation->width÷2) page_response(presentation, 1);
+                else if (x < 3*presentation->width÷4) {
+                    presentation->viewport ← 0; presentation->page_count ← 0;
+                    presentation->fenced ← 0; presentation->line_start ← 1;
+                }
+                else select_page(presentation);
                 present_stored_response(presentation); handled ← 1;
             }
+            presentation->touch_down ← 0;
         }
         AInputQueue_finishEvent(presentation->input, event, handled);
     }
@@ -469,6 +595,12 @@ static int on_tick(int descriptor, int events, void *context) {
     if (result == FC_OK && barrier) {
         result ← commit_stored_prefix(&presentation->conversation);
         presentation->last_barrier_ns ← now;
+        if (result == FC_OK) __android_log_print(ANDROID_LOG_INFO, "FastChat",
+            "source=%s prefix request=%llu attempt=%llu committed=%llu session_ns=%llu",
+            FC_SOURCE_REVISION, (unsigned long long)presentation->conversation.request,
+            (unsigned long long)presentation->conversation.attempt,
+            (unsigned long long)presentation->conversation.extents.committed,
+            (unsigned long long)presentation->created_ns);
     }
     if (result != FC_OK) {
         presentation->running ← 0;
@@ -529,6 +661,7 @@ static Result configure_transport(Presentation *presentation) {
     if (!file) return errno == ENOENT ? FC_OK : FC_REJECTED;
     char origin[2048] ← {0}, ca[2048] ← {0}, line[4096];
     unsigned seen ← 0;
+    ProviderRequestFormat format ← PROVIDER_CHAT_COMPLETIONS;
     Result result ← FC_OK;
     while (fgets(line, sizeof(line), file)) {
         size_t length ← strlen(line);
@@ -537,6 +670,13 @@ static Result configure_transport(Presentation *presentation) {
         char *value ← strchr(line, '\t');
         if (!value || strchr(value+1, '\t')) { result ← FC_REJECTED; break; }
         *value ← 0; value ← value + 1;
+        if (!strcmp(line, "format")) {
+            if (seen & 16) { result ← FC_REJECTED; break; }
+            if (!strcmp(value, "responses")) format ← PROVIDER_RESPONSES;
+            else if (strcmp(value, "chat-completions")) { result ← FC_REJECTED; break; }
+            seen ← seen | 16;
+            continue;
+        }
         char *destination ← NULL;
         size_t capacity ← 0;
         unsigned bit ← 0;
@@ -549,9 +689,10 @@ static Result configure_transport(Presentation *presentation) {
     }
     if (ferror(file)) result ← FC_REJECTED;
     fclose(file);
-    if (result != FC_OK || seen != 15 || ca[0] != '/' || presentation->provider_path[0] != '/') return FC_REJECTED;
+    if (result != FC_OK || (seen & 15) != 15 || ca[0] != '/' || presentation->provider_path[0] != '/') return FC_REJECTED;
     result ← transport_boundary_open(&presentation->network, &presentation->conversation, origin, ca);
     if (result != FC_OK) return result;
+    presentation->network.request_format ← format;
     presentation->http2 ← 1;
     count ← snprintf(filename, sizeof(filename), "%s/authorization.header", presentation->activity->internalDataPath);
     if (count < 0 || (size_t)count >= sizeof(filename)) return FC_REJECTED;
@@ -566,6 +707,44 @@ static Result configure_transport(Presentation *presentation) {
     fclose(file);
     return result;
 }
+static int acceptance_intent(Presentation *presentation, char *store, size_t capacity, char *fixture) {
+    JNIEnv *environment ← presentation->activity->env;
+    if ((*environment)->PushLocalFrame(environment, 12) < 0) return -1;
+    jobject activity ← presentation->activity->clazz;
+    jobject intent ← (*environment)->CallObjectMethod(environment, activity,
+        method(environment, activity, "getIntent", "()Landroid/content/Intent;"));
+    if (clear_java_failure(presentation, environment) || !intent) {
+        (*environment)->PopLocalFrame(environment, NULL); return -1;
+    }
+    jstring key ← (*environment)->NewStringUTF(environment, "fastchat_acceptance_store");
+    jstring value ← (*environment)->CallObjectMethod(environment, intent,
+        method(environment, intent, "getStringExtra", "(Ljava/lang/String;)Ljava/lang/String;"), key);
+    int result ← 0;
+    if (value) {
+        const char *name ← (*environment)->GetStringUTFChars(environment, value, NULL);
+        result ← -1;
+        if (name && strlen(name) > 6 && strlen(name) < capacity && !strncmp(name, "fc-m4-", 6)) {
+            result ← 1;
+            for (const char *part ← name; *part; part++)
+                if (!((*part >= 'a' && *part <= 'z') || (*part >= 'A' && *part <= 'Z') ||
+                      (*part >= '0' && *part <= '9') || *part == '-')) result ← -1;
+            if (result == 1) strcpy(store, name);
+        }
+        if (name) (*environment)->ReleaseStringUTFChars(environment, value, name);
+    }
+    key ← (*environment)->NewStringUTF(environment, "fastchat_acceptance_fixture");
+    value ← (*environment)->CallObjectMethod(environment, intent,
+        method(environment, intent, "getStringExtra", "(Ljava/lang/String;)Ljava/lang/String;"), key);
+    if (value) {
+        const char *name ← (*environment)->GetStringUTFChars(environment, value, NULL);
+        if (result != 1 || !name || (strcmp(name, ":long") && strcmp(name, ":lost") && strcmp(name, ":fail"))) result ← -1;
+        else strcpy(fixture, name); /* longest accepted literal is six bytes */
+        if (name) (*environment)->ReleaseStringUTFChars(environment, value, name);
+    }
+    if (clear_java_failure(presentation, environment)) result ← -1;
+    (*environment)->PopLocalFrame(environment, NULL);
+    return result;
+}
 __attribute__((visibility("default")))
 void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t saved_size) {
     (void)saved; (void)saved_size;
@@ -574,6 +753,7 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t sav
     presentation->activity ← activity;
     presentation->timer ← -1;
     presentation->density ← 1;
+    presentation->line_start ← 1;
     presentation->conversation.journal ← -1;
     presentation->conversation.response ← -1;
     presentation->created_ns ← monotonic_ns();
@@ -587,14 +767,19 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t sav
     activity->callbacks->onInputQueueCreated ← input_created;
     activity->callbacks->onInputQueueDestroyed ← input_destroyed;
     char path[4096];
-    int count ← snprintf(path, sizeof(path), "%s/conversation", activity->internalDataPath);
-    if (count < 0 || (size_t)count >= sizeof(path) || conversation_open(&presentation->conversation, path) != FC_OK || policy_open() != FC_OK) {
+    char acceptance_store[80] ← {0}, acceptance_fixture[8] ← {0};
+    int acceptance ← acceptance_intent(presentation, acceptance_store, sizeof(acceptance_store), acceptance_fixture);
+    int count ← snprintf(path, sizeof(path), "%s/%s", activity->internalDataPath,
+                         acceptance == 1 ? acceptance_store : "conversation");
+    if (acceptance < 0 || count < 0 || (size_t)count >= sizeof(path) || conversation_open(&presentation->conversation, path) != FC_OK || policy_open() != FC_OK) {
         presentation->failure ← 1;
         report_problem(presentation, "Store unavailable: submission disabled");
     }
     __android_log_print(ANDROID_LOG_INFO, "FastChat", "source=%s replay_ns=%llu", FC_SOURCE_REVISION,
         (unsigned long long)(monotonic_ns() - presentation->created_ns));
-    if (!presentation->failure && configure_transport(presentation) != FC_OK) {
+    /* A named acceptance store always selects the deterministic backend.
+       It never opens the ordinary conversation or reads account settings. */
+    if (!presentation->failure && !acceptance && configure_transport(presentation) != FC_OK) {
         presentation->failure ← 1;
         report_problem(presentation, "Explicit transport profile unavailable; submission disabled");
     }
@@ -609,4 +794,16 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t sav
     } else report_problem(presentation, "Fixture timer unavailable");
     __android_log_print(ANDROID_LOG_INFO, "FastChat", "native_slice=ready policy=%s recovered_partial=%d",
         renderer_follows_prefixes() ? "streaming" : "disk-first", presentation->conversation.recovered_partial);
+    __android_log_print(ANDROID_LOG_INFO, "FastChat", "source=%s store=%s phase=%s request=%llu attempt=%llu committed=%llu session_ns=%llu",
+        FC_SOURCE_REVISION, acceptance == 1 ? acceptance_store : "conversation", phase_name(presentation->conversation.phase),
+        (unsigned long long)presentation->conversation.request, (unsigned long long)presentation->conversation.attempt,
+        (unsigned long long)presentation->conversation.extents.committed, (unsigned long long)presentation->created_ns);
+    if (!presentation->failure && presentation->composer && acceptance_fixture[0]) {
+        JNIEnv *environment ← activity->env;
+        jstring prompt ← (*environment)->NewStringUTF(environment, acceptance_fixture);
+        (*environment)->CallVoidMethod(environment, presentation->composer,
+            method(environment, presentation->composer, "setText", "(Ljava/lang/CharSequence;)V"), prompt);
+        (*environment)->DeleteLocalRef(environment, prompt);
+        if (!clear_java_failure(presentation, environment)) send_or_cancel(presentation);
+    }
 }
