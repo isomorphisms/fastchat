@@ -72,6 +72,16 @@ immutable application plan. Cat Food's A1-primary/C67-paired policy remains
 authoritative. Neither a fabricated hash nor a parallel producer repairs that
 closure.
 
+The leaf now supplies `ci/android-application.tsv` to Cat Food's existing
+`plan-android-build` operation. It declares the current arena package ID,
+unchanged launcher label and minimum SDK, separate ABI packages, qualified
+ARM32 production and unresolved ARM64 production. Cat Food's label registry
+must independently recognize that same identity. An A1-led candidate plan must
+retain the C67 obligation as blocked while ARM64 remains unknown. This planning
+input and its read-only output are not signed producer admission, finished APK
+acceptance or the missing independently qualified S2/S4/S5/S3 closure. The
+registered paired handler's unconditional predecessor refusal is preserved.
+
 FC-M4 physical installation, launch, replay, latency and memory acceptance
 require a verified live A1 or C67 channel and exact artifact. Device automation
 belongs to Kitchen and independent evidence admission to ai-ci. Host fixtures
