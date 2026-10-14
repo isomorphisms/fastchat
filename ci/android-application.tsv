@@ -1,0 +1,8 @@
+schema	catfood-android-application-v1
+repository	isomorphisms/fastchat
+package_id	org.isomorphisms.fastchat.diskstreaming.arena
+launcher_label	FastChat live disk
+min_sdk	26
+packaging	split
+armeabi-v7a	supported
+arm64-v8a	unknown

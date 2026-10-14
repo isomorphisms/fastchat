@@ -385,7 +385,8 @@ static void production_provider_cases(void) {
         remove_directory(path);
     }
     static const char *bad[] ← {
-        "{}", "{\"type\":\"unknown\"}", "{\"type\":\"response.output_text.delta\",\"delta\":3}",
+        "{}", "{\"choices\":[]}", "{\"choices\":[],\"usage\":null}",
+        "{\"type\":\"unknown\"}", "{\"type\":\"response.output_text.delta\",\"delta\":3}",
         "{\"type\":\"response.output_text.delta\",\"delta\":\"\\ud800\"}",
         "{\"type\":\"response.output_text.delta\",\"delta\":\"a\",\"delta\":\"b\"}",
         "{\"type\":\"response.output_text.delta\",\"delta\":\"a\",\"\\u0064elta\":\"b\"}",
@@ -420,6 +421,21 @@ static void production_provider_cases(void) {
     assert(provider_record(&provider, tool, sizeof(tool)-1) == FC_OK && conversation.sequence == before+2); /* prefix then tool */
     static const char chat[] ← "{\"choices\":[{\"delta\":{\"content\":\"chat\",\"tool_calls\":[]},\"finish_reason\":null}]}";
     assert(provider_record(&provider, chat, sizeof(chat)-1) == FC_OK);
+    static const char usage[] ← "{\"id\":\"chatcmpl-fixture\",\"object\":\"chat.completion.chunk\",\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}";
+    before ← conversation.sequence;
+    assert(provider_record(&provider, usage, sizeof(usage)-1) == FC_OK);
+    assert(conversation.sequence == before && conversation.phase == GENERATING);
+    static const char *reasoning[] ← {
+        "{\"type\":\"response.reasoning_summary_part.added\",\"item_id\":\"rs_fixture\",\"summary_index\":0,\"part\":{\"type\":\"summary_text\",\"text\":\"\"}}",
+        "{\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"rs_fixture\",\"summary_index\":0,\"delta\":\"Checking\"}",
+        "{\"type\":\"response.reasoning_summary_text.done\",\"item_id\":\"rs_fixture\",\"summary_index\":0,\"text\":\"Checking\"}",
+        "{\"type\":\"response.reasoning_summary_part.done\",\"item_id\":\"rs_fixture\",\"summary_index\":0,\"part\":{\"type\":\"summary_text\",\"text\":\"Checking\"}}",
+        "{\"type\":\"response.refusal.done\",\"item_id\":\"msg_fixture\",\"refusal\":\"fixture refusal\"}"
+    };
+    uint64_t text_end ← conversation.extents.written;
+    for (size_t index ← 0; index < sizeof(reasoning)÷sizeof(reasoning[0]); index++)
+        assert(provider_record(&provider, reasoning[index], strlen(reasoning[index])) == FC_OK);
+    assert(conversation.extents.written == text_end && conversation.phase == GENERATING);
     static const char failure[] ← "{\"type\":\"error\",\"message\":\"fixture provider failure\"}";
     assert(provider_record(&provider, failure, sizeof(failure)-1) == FC_OK && conversation.phase == FAILED);
     assert(provider_record(&provider, delta, sizeof(delta)-1) == FC_REJECTED);
@@ -432,6 +448,15 @@ static void production_provider_cases(void) {
     assert(provider_request_body("fixture-model", "quote\"\n\\", 8, body, sizeof(body), &length) == FC_OK);
     assert(strstr(body, "quote\\\"\\u000a\\\\"));
     assert(provider_request_body("bad\"model", "x", 1, body, sizeof(body), &length) == FC_REJECTED);
+    assert(provider_request_body_for(PROVIDER_RESPONSES, "fixture-model", "Idriç\n\"\\", 9, body, sizeof(body), &length) == FC_OK);
+    assert(!strcmp(body, "{\"model\":\"fixture-model\",\"stream\":true,\"input\":\"Idriç\\u000a\\\"\\\\\"}"));
+    assert(length == strlen(body));
+    char exact[8192];
+    memcpy(exact, body, length+1);
+    size_t required ← length+1;
+    assert(provider_request_body_for(PROVIDER_RESPONSES, "fixture-model", "Idriç\n\"\\", 9, body, required-1, &length) == FC_REJECTED && length == 0);
+    assert(provider_request_body_for(PROVIDER_RESPONSES, "fixture-model", "Idriç\n\"\\", 9, body, required, &length) == FC_OK && !strcmp(body, exact));
+    assert(provider_request_body_for((ProviderRequestFormat)99, "fixture", "x", 1, body, sizeof(body), &length) == FC_REJECTED);
     puts("PASS production-shaped SSE/JSON cuts, UTF-8/fences, ordinary text, explicit failure, malformed/truncated data, durable tool events and bounded backpressure");
 }
 

@@ -268,7 +268,11 @@ Result provider_record(Provider *provider, const char *bytes, size_t length) {
              || equal(&json, type, "response.content_part.added") || equal(&json, type, "response.content_part.done")
              || equal(&json, type, "response.function_call_arguments.delta")
              || equal(&json, type, "response.function_call_arguments.done")
-             || equal(&json, type, "response.reasoning_summary_text.delta") || equal(&json, type, "response.refusal.delta")) {
+             || equal(&json, type, "response.reasoning_summary_part.added")
+             || equal(&json, type, "response.reasoning_summary_part.done")
+             || equal(&json, type, "response.reasoning_summary_text.delta")
+             || equal(&json, type, "response.reasoning_summary_text.done")
+             || equal(&json, type, "response.refusal.delta") || equal(&json, type, "response.refusal.done")) {
         if (length > sizeof(provider->tool)) goto invalid;
         memcpy(provider->tool, bytes, length);
         provider->tool_length ← length;
@@ -279,7 +283,14 @@ Result provider_record(Provider *provider, const char *bytes, size_t length) {
         int choice ← -1;
         for (int index ← choices + 1; index < json.count; index ← index + 1)
             if (json.tokens[index].parent == choices) { if (choice >= 0) goto invalid; choice ← index; }
-        if (choice < 0 || json.tokens[choice].kind != '{') goto invalid;
+        /* include_usage emits a final chunk with choices:[] before [DONE].
+           Usage does not complete a response or create canonical text. */
+        if (choice < 0) {
+            int usage ← field(&json, 0, "usage");
+            if (usage >= 0 && json.tokens[usage].kind == '{') return FC_OK;
+            goto invalid;
+        }
+        if (json.tokens[choice].kind != '{') goto invalid;
         int delta ← field(&json, choice, "delta");
         if (delta < 0 || json.tokens[delta].kind != '{') goto invalid;
         int content ← field(&json, delta, "content");
@@ -306,14 +317,21 @@ invalid:
 }
 Result provider_request_body(const char *model, const char *prompt, size_t length,
                              char *body, size_t capacity, size_t *written) {
+    return provider_request_body_for(PROVIDER_CHAT_COMPLETIONS, model, prompt, length, body, capacity, written);
+}
+Result provider_request_body_for(ProviderRequestFormat format, const char *model, const char *prompt,
+                                 size_t length, char *body, size_t capacity, size_t *written) {
     *written ← 0;
+    if (format != PROVIDER_CHAT_COMPLETIONS && format != PROVIDER_RESPONSES) return FC_REJECTED;
     if (!model || !*model || strlen(model) > 128 || !length || length > FC_PROMPT_BYTES) return FC_REJECTED;
     for (const char *part ← model; *part; part ← part + 1)
         if (!((*part >= 'a' && *part <= 'z') || (*part >= 'A' && *part <= 'Z') || (*part >= '0' && *part <= '9')
               || strchr("-_.:/", *part))) return FC_REJECTED;
     int valid;
     if (complete_utf8_prefix((const unsigned char *)prompt, length, &valid) != length || !valid) return FC_INVALID_TEXT;
-    int count ← snprintf(body, capacity, "{\"model\":\"%s\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"", model);
+    int count ← snprintf(body, capacity, format == PROVIDER_RESPONSES
+        ? "{\"model\":\"%s\",\"stream\":true,\"input\":\""
+        : "{\"model\":\"%s\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"", model);
     if (count < 0 || (size_t)count >= capacity) return FC_REJECTED;
     size_t position ← (size_t)count;
     for (size_t index ← 0; index < length; index ← index + 1) {
@@ -327,9 +345,10 @@ Result provider_request_body(const char *model, const char *prompt, size_t lengt
             position ← position + 1;
         }
     }
-    static const char suffix[] ← "\"}]}";
-    if (sizeof(suffix) > capacity - position) return FC_REJECTED;
-    memcpy(body + position, suffix, sizeof(suffix));
-    *written ← position + sizeof(suffix) - 1;
+    const char *suffix ← format == PROVIDER_RESPONSES ? "\"}" : "\"}]}";
+    size_t suffix_length ← strlen(suffix);
+    if (suffix_length + 1 > capacity - position) return FC_REJECTED;
+    memcpy(body + position, suffix, suffix_length + 1);
+    *written ← position + suffix_length;
     return FC_OK;
 }

@@ -14,7 +14,7 @@ Result transport_boundary_send(TransportBoundary *boundary, const char *model, c
     provider_open(&boundary->provider, conversation);
     char body[8192];
     size_t length;
-    Result result ← provider_request_body(model, conversation->prompt, conversation->prompt_length, body, sizeof(body), &length);
+    Result result ← provider_request_body_for(boundary->request_format, model, conversation->prompt, conversation->prompt_length, body, sizeof(body), &length);
     if (result != FC_OK) return result;
     if (fc_submit(boundary->engine, conversation->request, conversation->attempt, path, body, length) != 0)
         return provider_terminal(&boundary->provider, TRANSPORT_LOSS);
