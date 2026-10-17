@@ -27,15 +27,8 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Current Grease implementation runtime
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          repository: dilapidated-shed/grease
-          run-id: 37478624499
-          artifact-ids: 11419719229
-          merge-multiple: true
-          github-token: ${{ github.token }}
-          path: grease
+      - name: Rebuild exact Grease from immutable source
+        uses: ./.github/actions/pinned-grease
       - name: Runtime file modes
         run: chmod +x grease/_bin/cxx-asan/ysh
       - name: Exact Grease identity
