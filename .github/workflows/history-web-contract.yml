@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           repository: dilapidated-shed/ChatGPTExporter
-          ref: 54ee4fceaa3e5cd1776ea7bfe70280f2e8343e5b
+          ref: 6e856557a1411ba048dad830d7f5b82a89e8422a
           path: exporter-native-source
           persist-credentials: false
 
