@@ -1,0 +1,42 @@
+name: FastChat native web-history boundary
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-history-adapter:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Exact FastChat candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Immutable ChatGPTExporter native contract
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: dilapidated-shed/ChatGPTExporter
+          ref: 54ee4fceaa3e5cd1776ea7bfe70280f2e8343e5b
+          path: exporter-native-source
+          persist-credentials: false
+
+      - name: Standalone native planner qualification
+        run: make -C exporter-native-source/native check
+
+      - name: Compile and run FastChat history consumer
+        run: |
+          set -eu
+          mkdir -p out
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Isrc -Iexporter-native-source/native \
+            src/history_web_boundary.c \
+            exporter-native-source/native/cgw_web.c \
+            tests/history_web_boundary.c \
+            -o out/history-web-boundary
+          out/history-web-boundary
