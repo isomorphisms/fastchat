@@ -1,0 +1,53 @@
+name: Build pinned Grease native runtime
+description: Rebuild verified Oils-derived Grease from immutable source, not an expiring Actions artifact
+runs:
+  using: composite
+  steps:
+    - name: Pin the Grease source manifest
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        repository: dilapidated-shed/grease
+        ref: 8bad10b21e0fe7fc93e851d705dc9b63dbf9d8fd
+        path: grease-manifest
+        persist-credentials: false
+
+    - name: Pin the underlying Oils implementation
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        repository: dilapidated-shed/oils
+        ref: 5651cf97a1b5042f24f14112a7ade9a1518eb0bc
+        path: grease-source
+        persist-credentials: false
+
+    - name: Verify immutable source chain before running third-party code
+      shell: bash
+      run: |
+        set -euo pipefail
+        test "$(git -C grease-manifest rev-parse HEAD)" = 8bad10b21e0fe7fc93e851d705dc9b63dbf9d8fd
+        test "$(git -C grease-manifest rev-parse HEAD:source)" = 5651cf97a1b5042f24f14112a7ade9a1518eb0bc
+        test "$(git -C grease-source rev-parse HEAD)" = 5651cf97a1b5042f24f14112a7ade9a1518eb0bc
+        test "$(uname -s)" = Linux
+        test "$(uname -m)" = x86_64
+        podman --version
+
+    - name: Build and validate exact Grease/Oils cpp-spec runtime
+      shell: bash
+      env:
+        REPO_ROOT: ${{ github.workspace }}/grease-source
+      run: |
+        set -euo pipefail
+        sudo sysctl vm.mmap_rnd_bits=28
+        cd grease-source
+        soil/github-actions.sh run-job cpp-spec podman
+        test "$(cat _tmp/soil/commit-hash.txt)" = 5651cf97a1b5042f24f14112a7ade9a1518eb0bc
+        soil/host-shim.sh did-all-succeed cpp-spec
+        test -f _bin/cxx-asan/ysh
+
+    - name: Publish checked runtime to established FastChat local path
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p grease/_bin/cxx-asan
+        sudo chown -R "$(id -u):$(id -g)" grease-source/_build grease-source/_bin
+        install -m 755 grease-source/_bin/cxx-asan/ysh grease/_bin/cxx-asan/ysh
+        echo '7e31cd05b7a9d8fb2a4a9e003a7f3fcb0159138506d17f0fb28da8cbe22aa85c  grease/_bin/cxx-asan/ysh' | sha256sum -c -
