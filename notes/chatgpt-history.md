@@ -9,7 +9,7 @@ This candidate creates only the read-only history **selection boundary**.
 It consumes the native C endpoint source from
 [dilapidated-shed/ChatGPTExporter](https://github.com/dilapidated-shed/ChatGPTExporter/pull/10)
 at immutable revision
-54ee4fceaa3e5cd1776ea7bfe70280f2e8343e5b, independently compiles the
+6e856557a1411ba048dad830d7f5b82a89e8422a, independently compiles the
 planner and runs synthetic FastChat consumer assertions in CI. No vendored copy
 can quietly diverge. The two repositories may later share the same source
 through a formally pinned native build dependency.
