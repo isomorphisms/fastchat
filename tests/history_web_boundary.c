@@ -40,9 +40,9 @@ int main(void)
             "account memories excluded from thread UI");
     require(out.path[0] == '\0' && out.body[0] == '\0', "account refusal clears data");
 
-    input.operation = CGW_SESSION_PROBE;
+    input.operation = (cgw_operation)0;
     require(fc_history_resolve(&input, &out) == CGW_INVALID_OPERATION,
-            "session access excluded from history UI");
+            "session operation absent from native history contract");
 
     const char *ids[] = {"first", "second"};
     input.operation = CGW_CONVERSATION_BATCH;
