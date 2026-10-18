@@ -303,9 +303,8 @@ static void present_stored_response(Presentation *presentation) {
         selected.phase ← presentation->conversation.phase;
     }
     char heading[160];
-    snprintf(heading, sizeof(heading), "FastChat %s | request %llu / attempt %llu",
-        renderer_follows_prefixes() ? "live disk" : "disk first",
-        (unsigned long long)selected_request, (unsigned long long)selected.attempt);
+    snprintf(heading, sizeof(heading), "FastChat | %s",
+        presentation->http2 ? presentation->model : "test responder (no model configured)");
     draw_label(environment, canvas, paint, heading, 16*density, 28*density, 14*density);
     draw_label(environment, canvas, paint, phase_name(selected.phase), 16*density, 52*density, 16*density);
     draw_label(environment, canvas, paint, "Older turn       Newer turn       Latest", 16*density, 82*density, 15*density);
@@ -337,8 +336,8 @@ static void present_stored_response(Presentation *presentation) {
     } else {
         presentation->next_viewport ← presentation->viewport;
         draw_label(environment, canvas, paint, presentation->conversation.phase == UNCERTAIN
-            ? "Remote outcome unknown. Send retries this request."
-            : "The deterministic fixture is ready.", 16*density, y, 15*density);
+            ? "Remote outcome unknown. Retry repeats this request."
+            : presentation->http2 ? "Ready for a model response." : "Test responder ready.", 16*density, y, 15*density);
     }
     if (presentation->message[0]) draw_label(environment, canvas, paint, presentation->message,
         16*density, bottom - 86*density, 13*density);
@@ -536,9 +535,11 @@ static void send_or_cancel(Presentation *presentation) {
         presentation->last_barrier_ns ← monotonic_ns();
         fixture_transport_open(&presentation->transport, &presentation->conversation);
         if (presentation->http2 && transport_boundary_send(&presentation->network, presentation->model, presentation->provider_path) != FC_OK) {
-            admit_event(&presentation->conversation, presentation->conversation.request, presentation->conversation.attempt, TRANSPORT_LOSS);
+            /* Request adaptation refused before fc_submit. It is a known local
+               refusal, not an unknown remote outcome and not a retry trigger. */
+            admit_event(&presentation->conversation, presentation->conversation.request, presentation->conversation.attempt, FAILURE);
             presentation->running ← 0;
-            report_problem(presentation, "Transport submission unavailable; outcome uncertain");
+            report_problem(presentation, "Model request not sent: context or profile unavailable");
         }
     } else if (!presentation->message[0]) report_problem(presentation, "Request could not be submitted; see FastChat log");
     present_stored_response(presentation);

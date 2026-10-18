@@ -81,11 +81,40 @@ static void exercise(const char *origin, const char *ca, const char *root, const
     assert(waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0);
     printf("PASS HTTP2 TLS/provider/storage/replay %s\n", name);
 }
+static void exercise_context(const char *origin, const char *ca, const char *root, ProviderRequestFormat format) {
+    char directory[4096];
+    const char *name ← format == PROVIDER_RESPONSES ? "context-responses" : "context-chat";
+    const char *endpoint ← format == PROVIDER_RESPONSES ? "/candidate-context-responses" : "/candidate-context-chat";
+    snprintf(directory, sizeof(directory), "%s/%s", root, name);
+    for (unsigned turn ← 0; turn < 2; turn++) {
+        Conversation conversation;
+        assert(conversation_open(&conversation, directory) == FC_OK);
+        if (turn) assert(conversation.phase == COMPLETED && conversation.request == 1);
+        const char *prompt ← turn ? "follow-up λ" : "fixture";
+        assert(submit_text(&conversation, prompt, strlen(prompt)) == FC_OK);
+        TransportBoundary boundary;
+        assert(transport_boundary_open(&boundary, &conversation, origin, ca) == FC_OK);
+        boundary.request_format ← format;
+        assert(transport_boundary_send(&boundary, "fixture", endpoint) == FC_OK);
+        uint64_t start ← now();
+        while (boundary.active || boundary.pending) {
+            assert(now() - start < 10000000000u);
+            assert(transport_boundary_poll(&boundary) == FC_OK);
+            usleep(1000);
+        }
+        assert(conversation.phase == COMPLETED);
+        transport_boundary_close(&boundary);
+        conversation_close(&conversation);
+    }
+    printf("PASS HTTP2 TLS two-turn durable replay/context %s\n", name);
+}
 int main(int count, char **arguments) {
     assert(count == 4);
     const char *names[] ← {"stream", "tool", "failure", "bad", "giant", "incomplete", "loss", "cancel", "slow", "responses", "usage"};
     Phase expected[] ← {COMPLETED, COMPLETED, FAILED, FAILED, FAILED, UNCERTAIN, UNCERTAIN, CANCELLED, COMPLETED, COMPLETED, COMPLETED};
     for (size_t index ← 0; index < sizeof(expected)÷sizeof(expected[0]); index ← index + 1)
         exercise(arguments[1], arguments[2], arguments[3], names[index], expected[index]);
+    exercise_context(arguments[1], arguments[2], arguments[3], PROVIDER_CHAT_COMPLETIONS);
+    exercise_context(arguments[1], arguments[2], arguments[3], PROVIDER_RESPONSES);
     return 0;
 }

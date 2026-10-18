@@ -460,6 +460,60 @@ static void production_provider_cases(void) {
     puts("PASS production-shaped SSE/JSON cuts, UTF-8/fences, ordinary text, explicit failure, malformed/truncated data, durable tool events and bounded backpressure");
 }
 
+static void provider_context_cases(void) {
+    Conversation conversation;
+    char path[64];
+    fresh_conversation(&conversation, path);
+    static const char answer[] ← "λ + 𝓕: \"first\"\n";
+    feed_bytes(&conversation, (const unsigned char *)answer, sizeof(answer)-1);
+    finish_conversation(&conversation);
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, path) == FC_OK);
+    assert(submit_text(&conversation, "follow up", 9) == FC_OK);
+    char body[8192], before[8192];
+    size_t length;
+    const char *messages ← "[{\"role\":\"user\",\"content\":\"hello\"},{\"role\":\"assistant\",\"content\":\"λ + 𝓕: \\\"first\\\"\\u000a\"},{\"role\":\"user\",\"content\":\"follow up\"}]}";
+    for (int format ← PROVIDER_CHAT_COMPLETIONS; format <= PROVIDER_RESPONSES; format++) {
+        assert(provider_conversation_body_for((ProviderRequestFormat)format, "fixture-model", &conversation, body, sizeof(body), &length) == FC_OK);
+        const char *start ← strchr(body, '[');
+        assert(start && !strcmp(start, messages));
+        assert(strstr(body, format == PROVIDER_RESPONSES ? "\"input\":[" : "\"messages\":["));
+        assert(length == strlen(body));
+        memcpy(before, body, length+1);
+        size_t needed ← length+1;
+        assert(provider_conversation_body_for((ProviderRequestFormat)format, "fixture-model", &conversation, body, needed-1, &length) == FC_REJECTED);
+        assert(length == 0 && body[0] == 0);
+        assert(provider_conversation_body_for((ProviderRequestFormat)format, "fixture-model", &conversation, body, needed, &length) == FC_OK);
+        assert(!strcmp(before, body));
+    }
+    /* Cancellation/partial output remains explicit in subsequent context. */
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, START) == FC_OK);
+    feed_bytes(&conversation, (const unsigned char *)"partial", 7);
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, CANCEL_REQUEST) == FC_OK);
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, CANCEL_ACK) == FC_OK);
+    assert(submit_text(&conversation, "after cancel", 12) == FC_OK);
+    assert(provider_conversation_body_for(PROVIDER_CHAT_COMPLETIONS, "fixture-model", &conversation, body, sizeof(body), &length) == FC_OK);
+    assert(strstr(body, "FastChat history: request 2 ended cancelled"));
+    assert(strstr(body, "committed partial reply"));
+    assert(strstr(body, "\"content\":\"partial\""));
+    conversation_close(&conversation);
+    remove_directory(path);
+    /* Real durable history larger than the wire budget refuses before POST. */
+    fresh_conversation(&conversation, path);
+    unsigned char large[FC_WRITE_BYTES];
+    memset(large, 'x', sizeof(large));
+    feed_bytes(&conversation, large, sizeof(large));
+    feed_bytes(&conversation, large, sizeof(large));
+    finish_conversation(&conversation);
+    assert(submit_text(&conversation, "next", 4) == FC_OK);
+    uint64_t sequence ← conversation.sequence;
+    assert(provider_conversation_body_for(PROVIDER_CHAT_COMPLETIONS, "fixture-model", &conversation, body, sizeof(body), &length) == FC_REJECTED);
+    assert(length == 0 && body[0] == 0 && conversation.sequence == sequence);
+    conversation_close(&conversation);
+    remove_directory(path);
+    puts("PASS durable two-turn context, both provider schemas, Unicode/escapes, exact bounds, explicit cancellation/partial history and overbudget refusal");
+}
+
 static void cancellation_cases(void) {
     Conversation pending;
     char pending_path[] ← "/tmp/fastchat-cancel-XXXXXX";
@@ -1109,6 +1163,7 @@ int main(int argc, char **argv) {
     history_case();
     pending_decision_case();
     production_provider_cases();
+    provider_context_cases();
     giant_framed_offer_case();
     prefix_visibility_case();
     response_cases();

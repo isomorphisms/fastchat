@@ -352,3 +352,91 @@ Result provider_request_body_for(ProviderRequestFormat format, const char *model
     *written ← position + suffix_length;
     return FC_OK;
 }
+
+typedef struct { char *bytes; size_t capacity, length; } RequestBody;
+static Result append_request_bytes(RequestBody *body, const char *bytes, size_t length) {
+    if (body->length >= body->capacity || length >= body->capacity - body->length) return FC_REJECTED;
+    memcpy(body->bytes + body->length, bytes, length);
+    body->length ← body->length + length;
+    body->bytes[body->length] ← 0;
+    return FC_OK;
+}
+static Result append_request_text(RequestBody *body, const char *bytes, size_t length) {
+    for (size_t index ← 0; index < length; index++) {
+        unsigned char byte ← (unsigned char)bytes[index];
+        char escape[7];
+        if (byte < 32) {
+            snprintf(escape, sizeof(escape), "\\u%04x", byte);
+            if (append_request_bytes(body, escape, 6) != FC_OK) return FC_REJECTED;
+        } else {
+            if ((byte == '\\' || byte == '"') && append_request_bytes(body, "\\", 1) != FC_OK) return FC_REJECTED;
+            if (append_request_bytes(body, bytes+index, 1) != FC_OK) return FC_REJECTED;
+        }
+    }
+    return FC_OK;
+}
+static Result begin_context_message(RequestBody *body, const char *role, int *first) {
+    if (!*first && append_request_bytes(body, ",", 1) != FC_OK) return FC_REJECTED;
+    *first ← 0;
+    char prefix[64];
+    int length ← snprintf(prefix, sizeof(prefix), "{\"role\":\"%s\",\"content\":\"", role);
+    if (length < 0 || (size_t)length >= sizeof(prefix)) return FC_REJECTED;
+    return append_request_bytes(body, prefix, (size_t)length);
+}
+Result provider_conversation_body_for(ProviderRequestFormat format, const char *model, Conversation *conversation,
+                                     char *bytes, size_t capacity, size_t *written) {
+    *written ← 0;
+    if (!bytes || !capacity) return FC_REJECTED;
+    bytes[0] ← 0;
+    if (!conversation || conversation->poisoned || conversation->phase != SUBMITTED) return FC_REJECTED;
+    /* Reuse the existing format/model/text validation, then replace its
+       one-prompt representation with ordered durable messages. */
+    size_t checked;
+    Result result ← provider_request_body_for(format, model, conversation->prompt, conversation->prompt_length,
+                                             bytes, capacity, &checked);
+    if (result != FC_OK) { bytes[0] ← 0; return result; }
+    RequestBody body ← { bytes, capacity, 0 };
+    char prefix[192];
+    int count ← snprintf(prefix, sizeof(prefix), "{\"model\":\"%s\",\"stream\":true,\"%s\":[", model,
+                         format == PROVIDER_RESPONSES ? "input" : "messages");
+    if (count < 0 || (size_t)count >= sizeof(prefix)) return FC_REJECTED;
+    result ← append_request_bytes(&body, prefix, (size_t)count);
+    int first ← 1;
+    /* The body remains 8192 bytes at the actual transport boundary. Refuse
+       excess history explicitly; never silently drop or summarize a turn. */
+    for (uint64_t request ← 1; result == FC_OK && request <= conversation->request; request++) {
+        HistoryTurn turn;
+        result ← history_turn(conversation, request, &turn);
+        if (result != FC_OK) break;
+        result ← begin_context_message(&body, "user", &first);
+        if (result == FC_OK) result ← append_request_text(&body, turn.prompt, turn.prompt_length);
+        if (result == FC_OK) result ← append_request_bytes(&body, "\"}", 2);
+        if (request == conversation->request) break;
+        if (result == FC_OK && turn.phase != COMPLETED) {
+            char status[256];
+            int length ← snprintf(status, sizeof(status), "FastChat history: request %llu ended %s. Any following assistant text is a committed partial reply, not a completed reply.",
+                (unsigned long long)turn.request, phase_name(turn.phase));
+            if (length < 0 || (size_t)length >= sizeof(status)) { result ← FC_REJECTED; break; }
+            result ← begin_context_message(&body, "system", &first);
+            if (result == FC_OK) result ← append_request_text(&body, status, (size_t)length);
+            if (result == FC_OK) result ← append_request_bytes(&body, "\"}", 2);
+        }
+        if (result == FC_OK && (turn.extent || turn.phase == COMPLETED)) {
+            result ← begin_context_message(&body, "assistant", &first);
+            uint64_t offset ← 0;
+            while (result == FC_OK && offset < turn.extent) {
+                unsigned char window[FC_VIEW_BYTES];
+                size_t length;
+                result ← read_history_window(conversation, &turn, offset, window, sizeof(window), &length);
+                if (result == FC_OK && !length) result ← FC_CORRUPT;
+                if (result == FC_OK) result ← append_request_text(&body, (const char *)window, length);
+                offset ← offset + (result == FC_OK ? length : 0);
+            }
+            if (result == FC_OK) result ← append_request_bytes(&body, "\"}", 2);
+        }
+    }
+    if (result == FC_OK) result ← append_request_bytes(&body, "]}", 2);
+    if (result != FC_OK) { bytes[0] ← 0; return result; }
+    *written ← body.length;
+    return FC_OK;
+}
