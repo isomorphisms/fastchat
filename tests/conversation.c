@@ -511,6 +511,18 @@ static void provider_context_cases(void) {
     assert(length == 0 && body[0] == 0 && conversation.sequence == sequence);
     conversation_close(&conversation);
     remove_directory(path);
+    fresh_conversation(&conversation, path);
+    static const unsigned char incomplete[] ← { 'o', 'k', ' ', 0xe2 };
+    feed_bytes(&conversation, incomplete, sizeof(incomplete));
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, CANCEL_REQUEST) == FC_OK);
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, CANCEL_ACK) == FC_OK);
+    assert(submit_text(&conversation, "continue", 8) == FC_OK);
+    assert(provider_conversation_body_for(PROVIDER_CHAT_COMPLETIONS, "fixture-model", &conversation, body, sizeof(body), &length) == FC_OK);
+    assert(strstr(body, "\"content\":\"ok \""));
+    int valid;
+    assert(complete_utf8_prefix((const unsigned char *)body, length, &valid) == length && valid);
+    conversation_close(&conversation);
+    remove_directory(path);
     puts("PASS durable two-turn context, both provider schemas, Unicode/escapes, exact bounds, explicit cancellation/partial history and overbudget refusal");
 }
 

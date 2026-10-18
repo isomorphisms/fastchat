@@ -428,7 +428,13 @@ Result provider_conversation_body_for(ProviderRequestFormat format, const char *
                 unsigned char window[FC_VIEW_BYTES];
                 size_t length;
                 result ← read_history_window(conversation, &turn, offset, window, sizeof(window), &length);
-                if (result == FC_OK && !length) result ← FC_CORRUPT;
+                if (result == FC_OK && !length) {
+                    /* A cancelled/lost attempt may have durably stored the
+                       start of one UTF-8 character. It has no textual value;
+                       the status message still identifies the partial reply. */
+                    if (turn.phase != COMPLETED && turn.extent - offset < 4) break;
+                    result ← FC_CORRUPT;
+                }
                 if (result == FC_OK) result ← append_request_text(&body, (const char *)window, length);
                 offset ← offset + (result == FC_OK ? length : 0);
             }
