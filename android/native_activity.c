@@ -28,6 +28,9 @@ typedef struct {
     AInputQueue *input;
     ALooper *looper;
     jobject composer;
+    jobject composer_manager, composer_layout;
+    int composer_attached;
+    int acceptance_pending;
     Conversation conversation;
     FixtureTransport transport;
     TransportBoundary network;
@@ -360,6 +363,46 @@ static void present_stored_response(Presentation *presentation) {
     }
     (*environment)->PopLocalFrame(environment, NULL);
 }
+/* NativeActivity takes the main surface AND input queue. A child of its
+   DecorView cannot draw or receive normal widget dispatch. An attached panel
+   has its own ViewRoot/surface/input queue; outside touches still reach the
+   native reader and Send/Stop targets. It needs no application DEX. */
+static void detach_composer(Presentation *presentation) {
+    if (!presentation->composer_attached) return;
+    JNIEnv *environment ← presentation->activity->env;
+    (*environment)->CallVoidMethod(environment, presentation->composer_manager,
+        method(environment, presentation->composer_manager, "removeViewImmediate", "(Landroid/view/View;)V"), presentation->composer);
+    clear_java_failure(presentation, environment);
+    presentation->composer_attached ← 0;
+}
+static void attach_composer(Presentation *presentation) {
+    if (!presentation->composer || presentation->composer_attached || !presentation->window) return;
+    JNIEnv *environment ← presentation->activity->env;
+    if ((*environment)->PushLocalFrame(environment, 12) < 0) return;
+    jobject activity ← presentation->activity->clazz;
+    jobject window ← (*environment)->CallObjectMethod(environment, activity, method(environment, activity, "getWindow", "()Landroid/view/Window;"));
+    jobject decor ← (*environment)->CallObjectMethod(environment, window, method(environment, window, "getDecorView", "()Landroid/view/View;"));
+    jobject token ← (*environment)->CallObjectMethod(environment, decor, method(environment, decor, "getWindowToken", "()Landroid/os/IBinder;"));
+    if (!clear_java_failure(presentation, environment) && token) {
+        int width ← (*environment)->CallIntMethod(environment, decor, method(environment, decor, "getWidth", "()I"));
+        int available ← width - (int)(104*presentation->density);
+        if (available > 0) {
+            jclass layout_type ← (*environment)->GetObjectClass(environment, presentation->composer_layout);
+            (*environment)->SetObjectField(environment, presentation->composer_layout,
+                (*environment)->GetFieldID(environment, layout_type, "token", "Landroid/os/IBinder;"), token);
+            (*environment)->SetIntField(environment, presentation->composer_layout,
+                (*environment)->GetFieldID(environment, layout_type, "width", "I"), available);
+            (*environment)->CallVoidMethod(environment, presentation->composer_manager,
+                method(environment, presentation->composer_manager, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V"),
+                presentation->composer, presentation->composer_layout);
+            if (!clear_java_failure(presentation, environment)) {
+                presentation->composer_attached ← 1;
+                __android_log_print(ANDROID_LOG_INFO, "FastChat", "composer_layer=attached width=%d height=%d", available, (int)(64*presentation->density));
+            }
+        }
+    }
+    (*environment)->PopLocalFrame(environment, NULL);
+}
 static void create_composer(Presentation *presentation) {
     JNIEnv *environment ← presentation->activity->env;
     (*environment)->PushLocalFrame(environment, 32);
@@ -375,29 +418,38 @@ static void create_composer(Presentation *presentation) {
     jobject edit ← (*environment)->NewObject(environment, edit_type,
         (*environment)->GetMethodID(environment, edit_type, "<init>", "(Landroid/content/Context;)V"), activity);
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setInputType", "(I)V"), 0x20001); /* text + multiline */
+    (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setFocusableInTouchMode", "(Z)V"), JNI_TRUE);
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setMinLines", "(I)V"), 1);
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setMaxLines", "(I)V"), 3);
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setImeOptions", "(I)V"), 0x10000000); /* no fullscreen extraction */
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setTextSize", "(F)V"), 18.0);
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setTextColor", "(I)V"), (jint)0xff24282b);
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setBackgroundColor", "(I)V"), (jint)0xffe4e6df);
-    jstring hint ← (*environment)->NewStringUTF(environment, "Message (:long, :lost, :fail fixtures)");
+    jstring hint ← (*environment)->NewStringUTF(environment, "Message");
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setHint", "(Ljava/lang/CharSequence;)V"), hint);
-    jclass layout_type ← (*environment)->FindClass(environment, "android/widget/FrameLayout$LayoutParams");
+    jclass layout_type ← (*environment)->FindClass(environment, "android/view/WindowManager$LayoutParams");
     jobject layout ← (*environment)->NewObject(environment, layout_type,
-        (*environment)->GetMethodID(environment, layout_type, "<init>", "(III)V"), -1,
-        (int)(64*presentation->density), 80); /* Gravity.BOTTOM */
+        (*environment)->GetMethodID(environment, layout_type, "<init>", "(IIIII)V"), 1,
+        (int)(64*presentation->density), 1000, 32, -3); /* application panel, NOT_TOUCH_MODAL, translucent */
     (*environment)->SetIntField(environment, layout,
-        (*environment)->GetFieldID(environment, layout_type, "rightMargin", "I"), (int)(104*presentation->density));
+        (*environment)->GetFieldID(environment, layout_type, "gravity", "I"), 83); /* BOTTOM | LEFT */
+    (*environment)->SetIntField(environment, layout,
+        (*environment)->GetFieldID(environment, layout_type, "softInputMode", "I"), 16); /* ADJUST_RESIZE */
     jobject window ← (*environment)->CallObjectMethod(environment, activity, method(environment, activity, "getWindow", "()Landroid/view/Window;"));
     (*environment)->CallVoidMethod(environment, window, method(environment, window, "setSoftInputMode", "(I)V"), 16);
-    jobject decor ← (*environment)->CallObjectMethod(environment, window, method(environment, window, "getDecorView", "()Landroid/view/View;"));
-    (*environment)->CallVoidMethod(environment, decor, method(environment, decor, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V"), edit, layout);
-    if (!clear_java_failure(presentation, environment)) presentation->composer ← (*environment)->NewGlobalRef(environment, edit);
+    jobject manager ← (*environment)->CallObjectMethod(environment, window,
+        method(environment, window, "getWindowManager", "()Landroid/view/WindowManager;"));
+    if (!clear_java_failure(presentation, environment) && manager) {
+        presentation->composer ← (*environment)->NewGlobalRef(environment, edit);
+        presentation->composer_layout ← (*environment)->NewGlobalRef(environment, layout);
+        presentation->composer_manager ← (*environment)->NewGlobalRef(environment, manager);
+    }
     (*environment)->PopLocalFrame(environment, NULL);
 }
 static Result submit_composer(Presentation *presentation) {
-    if (!presentation->composer) return FC_REJECTED;
+    if (!presentation->composer || !presentation->composer_attached) {
+        report_problem(presentation, "Message input unavailable"); return FC_REJECTED;
+    }
     JNIEnv *environment ← presentation->activity->env;
     jobject editable ← (*environment)->CallObjectMethod(environment, presentation->composer,
         method(environment, presentation->composer, "getText", "()Landroid/text/Editable;"));
@@ -426,6 +478,11 @@ static Result submit_composer(Presentation *presentation) {
         length ← length + width;
     }
     if (units) (*environment)->ReleaseStringChars(environment, text, units);
+    if (result == FC_REJECTED) report_problem(presentation, "Message exceeds 1024 UTF-8 bytes");
+    if (result == FC_INVALID_TEXT) report_problem(presentation, "Message contains invalid Unicode");
+    if (result == FC_OK && !length) {
+        report_problem(presentation, "Type a message first"); result ← FC_REJECTED;
+    }
     if (result == FC_OK) result ← submit_text(&presentation->conversation, bytes, length);
     (*environment)->DeleteLocalRef(environment, text);
     (*environment)->DeleteLocalRef(environment, editable);
@@ -439,6 +496,7 @@ static Result submit_composer(Presentation *presentation) {
 }
 static void send_or_cancel(Presentation *presentation) {
     if (presentation->failure || presentation->timer < 0) return;
+    presentation->message[0] ← 0;
     ComposerAction action;
     if (policy_composer_action(presentation->conversation.phase, presentation->running, &action) != FC_OK) {
         presentation->failure ← 1;
@@ -482,7 +540,7 @@ static void send_or_cancel(Presentation *presentation) {
             presentation->running ← 0;
             report_problem(presentation, "Transport submission unavailable; outcome uncertain");
         }
-    } else report_problem(presentation, "Message rejected (empty, too long, or active request)");
+    } else if (!presentation->message[0]) report_problem(presentation, "Request could not be submitted; see FastChat log");
     present_stored_response(presentation);
 }
 static int on_input(int descriptor, int events, void *context) {
@@ -553,6 +611,10 @@ static int on_input(int descriptor, int events, void *context) {
 static int on_tick(int descriptor, int events, void *context) {
     (void)events;
     Presentation *presentation ← context;
+    if (presentation->acceptance_pending && presentation->composer_attached) {
+        presentation->acceptance_pending ← 0;
+        send_or_cancel(presentation);
+    }
     uint64_t ticks;
     if (read(descriptor, &ticks, sizeof(ticks)) != sizeof(ticks)) return 1;
     if (!presentation->running) return 1;
@@ -615,11 +677,12 @@ static void window_created(ANativeActivity *activity, ANativeWindow *window) {
     Presentation *presentation ← activity->instance;
     presentation->window ← window;
     ANativeWindow_acquire(window);
+    attach_composer(presentation);
     present_stored_response(presentation);
 }
 static void window_destroyed(ANativeActivity *activity, ANativeWindow *window) {
     Presentation *presentation ← activity->instance;
-    if (presentation->window == window) { ANativeWindow_release(window); presentation->window ← NULL; }
+    if (presentation->window == window) { detach_composer(presentation); ANativeWindow_release(window); presentation->window ← NULL; }
 }
 static void redraw(ANativeActivity *activity, ANativeWindow *window) {
     (void)window; present_stored_response(activity->instance);
@@ -627,6 +690,20 @@ static void redraw(ANativeActivity *activity, ANativeWindow *window) {
 static void content_changed(ANativeActivity *activity, const ARect *rectangle) {
     Presentation *presentation ← activity->instance;
     presentation->content_bottom ← rectangle->bottom;
+    /* Reattach against the new parent frame after resize/IME/rotation. */
+    if (presentation->composer_attached) {
+        JNIEnv *environment ← activity->env;
+        jclass layout_type ← (*environment)->GetObjectClass(environment, presentation->composer_layout);
+        int available ← rectangle->right - rectangle->left - (int)(104*presentation->density);
+        if (available > 0) {
+            (*environment)->SetIntField(environment, presentation->composer_layout,
+                (*environment)->GetFieldID(environment, layout_type, "width", "I"), available);
+            (*environment)->CallVoidMethod(environment, presentation->composer_manager,
+                method(environment, presentation->composer_manager, "updateViewLayout", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V"), presentation->composer, presentation->composer_layout);
+        }
+        (*environment)->DeleteLocalRef(environment, layout_type);
+        clear_java_failure(presentation, environment);
+    } else attach_composer(presentation);
     present_stored_response(presentation);
 }
 static void input_created(ANativeActivity *activity, AInputQueue *queue) {
@@ -639,12 +716,43 @@ static void input_destroyed(ANativeActivity *activity, AInputQueue *queue) {
     AInputQueue_detachLooper(queue);
     presentation->input ← NULL;
 }
+static void resumed(ANativeActivity *activity) { attach_composer(activity->instance); }
+static void stopped(ANativeActivity *activity) { detach_composer(activity->instance); }
+static void *save_draft(ANativeActivity *activity, size_t *size) {
+    Presentation *presentation ← activity->instance;
+    *size ← 0;
+    if (!presentation->composer) return NULL;
+    JNIEnv *environment ← activity->env;
+    if ((*environment)->PushLocalFrame(environment, 8) < 0) return NULL;
+    jobject editable ← (*environment)->CallObjectMethod(environment, presentation->composer,
+        method(environment, presentation->composer, "getText", "()Landroid/text/Editable;"));
+    jstring text ← (*environment)->CallObjectMethod(environment, editable, method(environment, editable, "toString", "()Ljava/lang/String;"));
+    void *copy ← NULL;
+    if (!clear_java_failure(presentation, environment) && text) {
+        jsize length ← (*environment)->GetStringLength(environment, text);
+        /* Bound saved presentation state separately from the 1024-byte send
+           limit. Submitted conversation history remains in the disk store. */
+        if (length > 0 && length <= 4096) {
+            copy ← malloc((size_t)length*sizeof(jchar));
+            if (copy) {
+                (*environment)->GetStringRegion(environment, text, 0, length, copy);
+                if (clear_java_failure(presentation, environment)) { free(copy); copy ← NULL; }
+                else *size ← (size_t)length*sizeof(jchar);
+            }
+        }
+    }
+    (*environment)->PopLocalFrame(environment, NULL);
+    return copy;
+}
 static void destroyed(ANativeActivity *activity) {
     Presentation *presentation ← activity->instance;
+    detach_composer(presentation);
     if (presentation->http2) transport_boundary_close(&presentation->network);
     else if (presentation->running && !presentation->conversation.poisoned) fixture_transport_lost(&presentation->transport);
     if (presentation->timer >= 0) { ALooper_removeFd(presentation->looper, presentation->timer); close(presentation->timer); }
     if (presentation->composer) (*activity->env)->DeleteGlobalRef(activity->env, presentation->composer);
+    if (presentation->composer_layout) (*activity->env)->DeleteGlobalRef(activity->env, presentation->composer_layout);
+    if (presentation->composer_manager) (*activity->env)->DeleteGlobalRef(activity->env, presentation->composer_manager);
     if (presentation->window) ANativeWindow_release(presentation->window);
     conversation_close(&presentation->conversation);
     policy_close();
@@ -747,7 +855,6 @@ static int acceptance_intent(Presentation *presentation, char *store, size_t cap
 }
 __attribute__((visibility("default")))
 void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t saved_size) {
-    (void)saved; (void)saved_size;
     Presentation *presentation ← calloc(1, sizeof(*presentation));
     if (!presentation) { ANativeActivity_finish(activity); return; }
     presentation->activity ← activity;
@@ -759,6 +866,9 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t sav
     presentation->created_ns ← monotonic_ns();
     activity->instance ← presentation;
     activity->callbacks->onDestroy ← destroyed;
+    activity->callbacks->onResume ← resumed;
+    activity->callbacks->onStop ← stopped;
+    activity->callbacks->onSaveInstanceState ← save_draft;
     activity->callbacks->onNativeWindowCreated ← window_created;
     activity->callbacks->onNativeWindowDestroyed ← window_destroyed;
     activity->callbacks->onNativeWindowRedrawNeeded ← redraw;
@@ -784,6 +894,14 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t sav
         report_problem(presentation, "Explicit transport profile unavailable; submission disabled");
     }
     create_composer(presentation);
+    if (presentation->composer && saved && saved_size && saved_size <= 4096*sizeof(jchar) && saved_size % sizeof(jchar) == 0) {
+        JNIEnv *environment ← activity->env;
+        jstring draft ← (*environment)->NewString(environment, saved, (jsize)(saved_size ÷ sizeof(jchar)));
+        (*environment)->CallVoidMethod(environment, presentation->composer,
+            method(environment, presentation->composer, "setText", "(Ljava/lang/CharSequence;)V"), draft);
+        (*environment)->DeleteLocalRef(environment, draft);
+        clear_java_failure(presentation, environment);
+    }
     presentation->looper ← ALooper_forThread();
     if (!presentation->looper) presentation->looper ← ALooper_prepare(ALOOPER_PREPARE_ALLOW_NON_CALLBACKS);
     presentation->timer ← timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
@@ -804,6 +922,6 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t sav
         (*environment)->CallVoidMethod(environment, presentation->composer,
             method(environment, presentation->composer, "setText", "(Ljava/lang/CharSequence;)V"), prompt);
         (*environment)->DeleteLocalRef(environment, prompt);
-        if (!clear_java_failure(presentation, environment)) send_or_cancel(presentation);
+        if (!clear_java_failure(presentation, environment)) presentation->acceptance_pending ← 1;
     }
 }
