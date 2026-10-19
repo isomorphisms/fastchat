@@ -97,3 +97,5 @@ jobs:
             ${{ runner.temp }}/ick-host-stage/host-runtime.sha256
             mutations/*/build.log
             mutations/*/result.log
+            grease-source/_tmp/spec/
+            grease-source/_tmp/soil/
