@@ -32,6 +32,53 @@ static uint64_t decode_number(const unsigned char *source, size_t length) {
         value ← (value << 8) | source[index - 1];
     return value;
 }
+static int identity_text(const char *text, size_t capacity, int allow_empty) {
+    size_t length ← strnlen(text, capacity);
+    if (length == capacity || (!length && !allow_empty)) return 0;
+    int valid;
+    if (complete_utf8_prefix((const unsigned char *)text, length, &valid) != length || !valid) return 0;
+    for (size_t index ← 0; index < length; index++)
+        if ((unsigned char)text[index] < 32 || text[index] == 127) return 0;
+    return 1;
+}
+int attempt_provider_valid(const AttemptProvider *provider) {
+    if (!provider || !identity_text(provider->origin, sizeof(provider->origin), 1)
+        || !identity_text(provider->path, sizeof(provider->path), 1)
+        || !identity_text(provider->model, sizeof(provider->model), 1)) return 0;
+    if (provider->backend == PROVIDER_FIXTURE)
+        return !provider->origin[0] && !provider->path[0] && !provider->model[0];
+    return (provider->backend == PROVIDER_CHAT || provider->backend == PROVIDER_RESPONSE)
+        && !strncmp(provider->origin, "https://", 8) && provider->origin[8]
+        && !strpbrk(provider->origin + 8, "/@?# ")
+        && provider->path[0] == '/' && !strpbrk(provider->path, "?# ") && provider->model[0];
+}
+/* Optional, versioned payload on the existing ATTEMPT_SUBMIT record. Empty
+   historical payloads stay explicitly unrecorded; no history is rewritten. */
+static size_t encode_provider(const AttemptProvider *provider, unsigned char *bytes) {
+    _Static_assert(8 + sizeof(provider->origin) + sizeof(provider->path) + sizeof(provider->model) - 3 <= FC_PROMPT_BYTES,
+                   "provider payload must fit the existing journal bound");
+    if (!provider) return 0;
+    size_t origin ← strlen(provider->origin), path ← strlen(provider->path), model ← strlen(provider->model);
+    bytes[0] ← 1; bytes[1] ← (unsigned char)provider->backend;
+    encode_number(bytes + 2, origin, 2); encode_number(bytes + 4, path, 2); encode_number(bytes + 6, model, 2);
+    memcpy(bytes + 8, provider->origin, origin);
+    memcpy(bytes + 8 + origin, provider->path, path);
+    memcpy(bytes + 8 + origin + path, provider->model, model);
+    return 8 + origin + path + model;
+}
+static Result decode_provider(const unsigned char *bytes, size_t length, AttemptProvider *provider) {
+    memset(provider, 0, sizeof(*provider));
+    if (!length) return FC_OK;
+    if (length < 8 || bytes[0] != 1) return FC_CORRUPT;
+    size_t origin ← (size_t)decode_number(bytes + 2, 2), path ← (size_t)decode_number(bytes + 4, 2), model ← (size_t)decode_number(bytes + 6, 2);
+    if (origin >= sizeof(provider->origin) || path >= sizeof(provider->path) || model >= sizeof(provider->model)
+        || length != 8 + origin + path + model || memchr(bytes + 8, 0, length - 8)) return FC_CORRUPT;
+    provider->backend ← (AttemptBackend)bytes[1];
+    memcpy(provider->origin, bytes + 8, origin);
+    memcpy(provider->path, bytes + 8 + origin, path);
+    memcpy(provider->model, bytes + 8 + origin + path, model);
+    return attempt_provider_valid(provider) ? FC_OK : FC_CORRUPT;
+}
 static int read_exact(int file, void *bytes, size_t length, uint64_t offset) {
     unsigned char *destination ← bytes;
     size_t read_bytes ← 0;
@@ -175,6 +222,7 @@ static void apply_phase(Conversation *conversation, Event event) {
 }
 static void begin_pending_extent(Conversation *conversation, Event event) {
     if (event != SUBMIT && event != RETRY) return;
+    memset(&conversation->provider, 0, sizeof(conversation->provider));
     /* A durable user decision is not a transport observation of the previous
        response. A crash before attempt submission must replay an empty turn. */
     conversation->response_base ← conversation->arena_high_water;
@@ -220,6 +268,8 @@ static Result publish_record(Conversation *conversation, Event event, uint64_t r
     conversation->extents.eligible ← conversation->extents.committed;
     apply_phase(conversation, event);
     begin_pending_extent(conversation, event);
+    if (event == ATTEMPT_SUBMIT)
+        return decode_provider((const unsigned char *)prompt, prompt_length, &conversation->provider);
     if (event == SUBMIT) {
         memcpy(conversation->prompt, prompt, prompt_length);
         conversation->prompt[prompt_length] ← 0;
@@ -275,7 +325,8 @@ static Result replay_record(Conversation *conversation, const unsigned char *rec
         if (attempt != conversation->attempt + 1
             || checksum != 0xffffffffu
             || extent != conversation->arena_high_water
-            || request != conversation->request || prompt_length) return FC_CORRUPT;
+            || request != conversation->request
+            || decode_provider(record + RECORD_HEADER, prompt_length, &conversation->provider) != FC_OK) return FC_CORRUPT;
         conversation->response_base ← extent;
         conversation->extents ← (Extents){0};
         conversation->extents.capacity ←
@@ -402,9 +453,12 @@ void conversation_close(Conversation *conversation) {
     conversation->journal ← -1;
     conversation->directory ← -1;
 }
-static Result begin_request(Conversation *conversation, Event event, const char *text, size_t length) {
+static Result begin_request(Conversation *conversation, Event event, const char *text, size_t length, const AttemptProvider *provider) {
     if (conversation->poisoned) return FC_STORAGE_ERROR;
     if (!event_is_admissible(conversation, event)) return FC_REJECTED;
+    if (provider && !attempt_provider_valid(provider)) return FC_REJECTED;
+    unsigned char identity[FC_PROMPT_BYTES];
+    size_t identity_length ← encode_provider(provider, identity);
     if (conversation->request == UINT64_MAX || conversation->attempt == UINT64_MAX || conversation->sequence > UINT64_MAX - 2)
         return FC_REJECTED;
     /* The user decision is durable before a fresh transport identity exists. */
@@ -416,16 +470,22 @@ static Result begin_request(Conversation *conversation, Event event, const char 
     conversation->response_crc ← 0xffffffffu;
     conversation->utf8_needed ← 0;
     return publish_record(conversation, ATTEMPT_SUBMIT, conversation->request,
-                          conversation->attempt + 1, NULL, 0);
+                          conversation->attempt + 1, (const char *)identity, identity_length);
 }
 Result submit_text(Conversation *conversation, const char *text, size_t length) {
+    return submit_text_to(conversation, text, length, NULL);
+}
+Result submit_text_to(Conversation *conversation, const char *text, size_t length, const AttemptProvider *provider) {
     if (!length || length > FC_PROMPT_BYTES) return FC_REJECTED;
     int valid;
     if (complete_utf8_prefix((const unsigned char *)text, length, &valid) != length || !valid) return FC_INVALID_TEXT;
-    return begin_request(conversation, SUBMIT, text, length);
+    return begin_request(conversation, SUBMIT, text, length, provider);
 }
 Result retry_request(Conversation *conversation) {
-    return begin_request(conversation, RETRY, NULL, 0);
+    return retry_request_to(conversation, NULL);
+}
+Result retry_request_to(Conversation *conversation, const AttemptProvider *provider) {
+    return begin_request(conversation, RETRY, NULL, 0, provider);
 }
 Result commit_stored_prefix(Conversation *conversation) {
     if (conversation->poisoned) return FC_STORAGE_ERROR;
@@ -575,8 +635,14 @@ Result history_turn(Conversation *conversation, uint64_t wanted, HistoryTurn *tu
                 turn->prompt[turn->prompt_length] ← 0;
                 turn->phase ← SUBMITTED;
             }
-            if (event == SUBMIT || event == RETRY) { turn->base ← absolute; turn->extent ← 0; }
-            if (event == ATTEMPT_SUBMIT) { turn->base ← absolute; turn->extent ← 0; turn->phase ← SUBMITTED; }
+            if (event == SUBMIT || event == RETRY) {
+                turn->base ← absolute; turn->extent ← 0;
+                memset(&turn->provider, 0, sizeof(turn->provider));
+            }
+            if (event == ATTEMPT_SUBMIT) {
+                if (decode_provider(record + RECORD_HEADER, length - RECORD_HEADER, &turn->provider) != FC_OK) return FC_CORRUPT;
+                turn->base ← absolute; turn->extent ← 0; turn->phase ← SUBMITTED;
+            }
             else if (event != SUBMIT && event != RETRY) {
                 if (absolute < turn->base || absolute > conversation->arena_capacity) return FC_CORRUPT;
                 turn->extent ← absolute - turn->base;

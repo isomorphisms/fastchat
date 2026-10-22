@@ -19,10 +19,17 @@ static void exercise(const char *origin, const char *ca, const char *root, const
     snprintf(path, sizeof(path), "/candidate-%s", name);
     Conversation conversation;
     assert(conversation_open(&conversation, directory) == FC_OK);
-    assert(submit_text(&conversation, "fixture", 7) == FC_OK);
     TransportBoundary boundary;
     assert(transport_boundary_open(&boundary, &conversation, origin, ca) == FC_OK);
     if (!strcmp(name, "responses")) boundary.request_format ← PROVIDER_RESPONSES;
+    AttemptProvider provider;
+    assert(transport_boundary_provider(&boundary, "fixture", path, &provider) == FC_OK);
+    assert(submit_text_to(&conversation, "fixture", 7, &provider) == FC_OK);
+    assert(transport_boundary_send(&boundary, "different-model", path) == FC_REJECTED);
+    assert(transport_boundary_send(&boundary, "fixture", "/wrong-path") == FC_REJECTED);
+    boundary.request_format ← !strcmp(name, "responses") ? PROVIDER_CHAT_COMPLETIONS : PROVIDER_RESPONSES;
+    assert(transport_boundary_send(&boundary, "fixture", path) == FC_REJECTED);
+    boundary.request_format ← !strcmp(name, "responses") ? PROVIDER_RESPONSES : PROVIDER_CHAT_COMPLETIONS;
     assert(transport_boundary_authorization(&boundary, "Authorization: bad\r\nInjected: x") == FC_REJECTED);
     assert(transport_boundary_authorization(&boundary, "") == FC_OK);
     assert(transport_boundary_send(&boundary, "fixture", path) == FC_OK);
@@ -51,7 +58,8 @@ static void exercise(const char *origin, const char *ca, const char *root, const
     if (!strcmp(name, "stream")) assert(conversation.extents.committed == strlen("Idriç 🐈\n```lua\nreturn 1\n```\n"));
     uint64_t old_attempt ← conversation.attempt;
     if (expected == UNCERTAIN) {
-        assert(retry_request(&conversation) == FC_OK && conversation.attempt != old_attempt);
+        assert(transport_boundary_provider(&boundary, "fixture", "/candidate-stream", &provider) == FC_OK);
+        assert(retry_request_to(&conversation, &provider) == FC_OK && conversation.attempt != old_attempt);
         assert(admit_event(&conversation, conversation.request, old_attempt, COMPLETE) == FC_REJECTED);
         assert(transport_boundary_send(&boundary, "fixture", "/candidate-stream") == FC_OK);
         while (boundary.active || boundary.pending) {
@@ -91,10 +99,12 @@ static void exercise_context(const char *origin, const char *ca, const char *roo
         assert(conversation_open(&conversation, directory) == FC_OK);
         if (turn) assert(conversation.phase == COMPLETED && conversation.request == 1);
         const char *prompt ← turn ? "follow-up λ" : "fixture";
-        assert(submit_text(&conversation, prompt, strlen(prompt)) == FC_OK);
         TransportBoundary boundary;
         assert(transport_boundary_open(&boundary, &conversation, origin, ca) == FC_OK);
         boundary.request_format ← format;
+        AttemptProvider provider;
+        assert(transport_boundary_provider(&boundary, "fixture", endpoint, &provider) == FC_OK);
+        assert(submit_text_to(&conversation, prompt, strlen(prompt), &provider) == FC_OK);
         assert(transport_boundary_send(&boundary, "fixture", endpoint) == FC_OK);
         uint64_t start ← now();
         while (boundary.active || boundary.pending) {

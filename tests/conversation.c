@@ -460,6 +460,95 @@ static void production_provider_cases(void) {
     puts("PASS production-shaped SSE/JSON cuts, UTF-8/fences, ordinary text, explicit failure, malformed/truncated data, durable tool events and bounded backpressure");
 }
 
+static void provider_identity_cases(void) {
+    Conversation conversation;
+    char path[64];
+    fresh_conversation(&conversation, path);
+    finish_conversation(&conversation);
+    AttemptProvider provider ← { PROVIDER_CHAT, "https://model.example:443", "/v1/chat/completions", "model-λ" };
+    AttemptProvider invalid ← provider;
+    strcpy(invalid.origin, "https://secret@model.example");
+    uint64_t sequence ← conversation.sequence;
+    assert(submit_text_to(&conversation, "next", 4, &invalid) == FC_REJECTED);
+    assert(conversation.sequence == sequence && conversation.phase == COMPLETED);
+    invalid ← provider; strcpy(invalid.path, "/v1?key=secret");
+    assert(!attempt_provider_valid(&invalid));
+    invalid ← provider; memset(invalid.model, 'x', sizeof(invalid.model));
+    assert(!attempt_provider_valid(&invalid));
+    assert(submit_text_to(&conversation, "next", 4, &provider) == FC_OK);
+    assert(!strcmp(conversation.provider.model, "model-λ"));
+    uint64_t request ← conversation.request, attempt ← conversation.attempt;
+    /* A restart before network effects preserves the bound identity and marks
+       the unknown outcome; it never sends or substitutes the next profile. */
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, path) == FC_OK);
+    assert(conversation.phase == UNCERTAIN && conversation.request == request && conversation.attempt == attempt);
+    assert(conversation.provider.backend == PROVIDER_CHAT && !strcmp(conversation.provider.model, "model-λ"));
+    HistoryTurn turn;
+    assert(history_turn(&conversation, 1, &turn) == FC_OK && turn.provider.backend == PROVIDER_UNRECORDED);
+    assert(history_turn(&conversation, request, &turn) == FC_OK && !strcmp(turn.provider.origin, provider.origin));
+    provider.backend ← PROVIDER_RESPONSE;
+    strcpy(provider.model, "new-model"); strcpy(provider.path, "/v1/responses");
+    assert(retry_request_to(&conversation, &provider) == FC_OK);
+    assert(conversation.attempt == attempt + 1 && conversation.provider.backend == PROVIDER_RESPONSE);
+    assert(history_turn(&conversation, request, &turn) == FC_OK && !strcmp(turn.provider.model, "new-model"));
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, START) == FC_OK);
+    finish_conversation(&conversation);
+    AttemptProvider fixture ← { .backend ← PROVIDER_FIXTURE };
+    assert(submit_text_to(&conversation, "test", 4, &fixture) == FC_OK);
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, TRANSPORT_LOSS) == FC_OK);
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, path) == FC_OK);
+    assert(conversation.provider.backend == PROVIDER_FIXTURE);
+    assert(history_turn(&conversation, request, &turn) == FC_OK && turn.provider.backend == PROVIDER_RESPONSE);
+    assert(!strcmp(turn.provider.path, "/v1/responses") && !strcmp(turn.provider.model, "new-model"));
+    conversation_close(&conversation);
+    remove_directory(path);
+    fresh_conversation(&conversation, path);
+    finish_conversation(&conversation);
+    /* The user decision survives a torn identity record, but neither its
+       uncommitted provider nor a fresh transport attempt is invented. */
+    attempt ← conversation.attempt;
+    conversation.write_budget ← 64 + 4 + 64 + 3;
+    assert(submit_text_to(&conversation, "next", 4, &provider) == FC_STORAGE_ERROR);
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, path) == FC_OK);
+    assert(conversation.phase == UNCERTAIN && conversation.attempt == attempt);
+    assert(conversation.provider.backend == PROVIDER_UNRECORDED);
+    assert(!strcmp(conversation.prompt, "next"));
+    conversation_close(&conversation);
+    remove_directory(path);
+    fresh_conversation(&conversation, path);
+    finish_conversation(&conversation);
+    uint64_t identity_offset ← conversation.journal_end + 64 + 4;
+    assert(submit_text_to(&conversation, "next", 4, &provider) == FC_OK);
+    unsigned char original[64 + FC_PROMPT_BYTES], changed[64 + FC_PROMPT_BYTES];
+    assert(pread(conversation.journal, original, 64, (off_t)identity_offset) == 64);
+    size_t record_length ← (size_t)record_number(original + 4, 4);
+    assert(record_length <= sizeof(original));
+    assert(pread(conversation.journal, original, record_length, (off_t)identity_offset) == (ssize_t)record_length);
+    char journal_path[128];
+    snprintf(journal_path, sizeof(journal_path), "%s/history.events", path);
+    conversation_close(&conversation);
+    int journal ← open(journal_path, O_RDWR);
+    assert(journal >= 0);
+    for (unsigned mutant ← 0; mutant < 4; mutant++) {
+        memcpy(changed, original, record_length);
+        if (mutant == 0) changed[64] ← 2; /* Unknown payload version. */
+        if (mutant == 1) changed[65] ← PROVIDER_UNRECORDED; /* Fake known payload. */
+        if (mutant == 2) changed[72] ← 0; /* Embedded NUL in a routing field. */
+        if (mutant == 3) set_record_number(changed + 66, 512, 2); /* Field overflow. */
+        memset(changed + 60, 0, 4);
+        set_record_number(changed + 60, checksum_bytes(0xffffffffu, changed, record_length), 4);
+        assert(pwrite(journal, changed, record_length, (off_t)identity_offset) == (ssize_t)record_length);
+        assert(fsync(journal) == 0);
+        assert(conversation_open(&conversation, path) == FC_CORRUPT);
+        conversation_close(&conversation);
+    }
+    close(journal);
+    remove_directory(path);
+    puts("PASS durable provider/model/schema per attempt, retry/restart identity, historical unknowns and credential-bearing route rejection");
+}
 static void provider_context_cases(void) {
     Conversation conversation;
     char path[64];
@@ -1176,6 +1265,7 @@ int main(int argc, char **argv) {
     pending_decision_case();
     production_provider_cases();
     provider_context_cases();
+    provider_identity_cases();
     giant_framed_offer_case();
     prefix_visibility_case();
     response_cases();

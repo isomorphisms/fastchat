@@ -4,13 +4,29 @@
 Result transport_boundary_open(TransportBoundary *boundary, Conversation *conversation,
                                const char *origin, const char *ca) {
     memset(boundary, 0, sizeof(*boundary));
+    if (!origin || strlen(origin) >= sizeof(boundary->origin)) return FC_REJECTED;
+    strcpy(boundary->origin, origin);
     provider_open(&boundary->provider, conversation);
     boundary->engine ← fc_open(origin, ca, 2);
     return boundary->engine ? FC_OK : FC_REJECTED;
 }
+Result transport_boundary_provider(const TransportBoundary *boundary, const char *model, const char *path, AttemptProvider *provider) {
+    memset(provider, 0, sizeof(*provider));
+    if (!model || !path || strlen(model) >= sizeof(provider->model) || strlen(path) >= sizeof(provider->path)) return FC_REJECTED;
+    provider->backend ← boundary->request_format == PROVIDER_CHAT_COMPLETIONS ? PROVIDER_CHAT
+        : boundary->request_format == PROVIDER_RESPONSES ? PROVIDER_RESPONSE : PROVIDER_UNRECORDED;
+    strcpy(provider->origin, boundary->origin); strcpy(provider->path, path); strcpy(provider->model, model);
+    return attempt_provider_valid(provider) ? FC_OK : FC_REJECTED;
+}
 Result transport_boundary_send(TransportBoundary *boundary, const char *model, const char *path) {
     Conversation *conversation ← boundary->provider.conversation;
     if (!boundary->engine || boundary->active || conversation->phase != SUBMITTED) return FC_REJECTED;
+    AttemptProvider provider;
+    if (transport_boundary_provider(boundary, model, path, &provider) != FC_OK
+        || provider.backend != conversation->provider.backend
+        || strcmp(provider.origin, conversation->provider.origin)
+        || strcmp(provider.path, conversation->provider.path)
+        || strcmp(provider.model, conversation->provider.model)) return FC_REJECTED;
     provider_open(&boundary->provider, conversation);
     char body[8192];
     size_t length;

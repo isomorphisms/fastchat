@@ -24,9 +24,11 @@ complete provider-specific reasoning/tool-call continuation.
 
 The normal screen identifies the configured model or explicitly identifies
 the test responder. Provider configuration remains app-private and external;
-no model, API key, ChatGPT session or vendor account is supplied here. Changing
-provider/model identity is not yet journaled with each turn. In-app endpoint
-setup and model selection also remain unfinished.
+no model, API key, ChatGPT session or vendor account is supplied here. The
+continuation now binds public routing/model identity to each new durable
+attempt and checks it before POST; see [attempt-provider.md](attempt-provider.md).
+Old turns remain explicitly unrecorded. In-app endpoint setup and model
+selection remain unfinished.
 
 ## Controller and watcher boundary
 

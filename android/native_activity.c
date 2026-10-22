@@ -301,10 +301,14 @@ static void present_stored_response(Presentation *presentation) {
         memcpy(selected.prompt, presentation->conversation.prompt, selected.prompt_length);
         selected.attempt ← presentation->conversation.attempt;
         selected.phase ← presentation->conversation.phase;
+        selected.provider ← presentation->conversation.provider;
     }
     char heading[160];
     snprintf(heading, sizeof(heading), "FastChat | %s",
-        presentation->http2 ? presentation->model : "test responder (no model configured)");
+        !selected_request ? (presentation->http2 ? presentation->model : "test responder (no model configured)")
+        : selected.provider.backend == PROVIDER_FIXTURE ? "test responder"
+        : selected.provider.backend == PROVIDER_UNRECORDED ? "provider not recorded"
+        : selected.provider.model);
     draw_label(environment, canvas, paint, heading, 16*density, 28*density, 14*density);
     draw_label(environment, canvas, paint, phase_name(selected.phase), 16*density, 52*density, 16*density);
     draw_label(environment, canvas, paint, "Older turn       Newer turn       Latest", 16*density, 82*density, 15*density);
@@ -445,6 +449,13 @@ static void create_composer(Presentation *presentation) {
     }
     (*environment)->PopLocalFrame(environment, NULL);
 }
+static Result selected_provider(Presentation *presentation, AttemptProvider *provider) {
+    if (presentation->http2)
+        return transport_boundary_provider(&presentation->network, presentation->model, presentation->provider_path, provider);
+    memset(provider, 0, sizeof(*provider));
+    provider->backend ← PROVIDER_FIXTURE;
+    return FC_OK;
+}
 static Result submit_composer(Presentation *presentation) {
     if (!presentation->composer || !presentation->composer_attached) {
         report_problem(presentation, "Message input unavailable"); return FC_REJECTED;
@@ -482,7 +493,9 @@ static Result submit_composer(Presentation *presentation) {
     if (result == FC_OK && !length) {
         report_problem(presentation, "Type a message first"); result ← FC_REJECTED;
     }
-    if (result == FC_OK) result ← submit_text(&presentation->conversation, bytes, length);
+    AttemptProvider provider;
+    if (result == FC_OK) result ← selected_provider(presentation, &provider);
+    if (result == FC_OK) result ← submit_text_to(&presentation->conversation, bytes, length, &provider);
     (*environment)->DeleteLocalRef(environment, text);
     (*environment)->DeleteLocalRef(environment, editable);
     if (result == FC_OK) {
@@ -497,6 +510,10 @@ static void send_or_cancel(Presentation *presentation) {
     if (presentation->failure || presentation->timer < 0) return;
     presentation->message[0] ← 0;
     ComposerAction action;
+    AttemptProvider provider;
+    if (selected_provider(presentation, &provider) != FC_OK) {
+        report_problem(presentation, "Provider profile is invalid"); return;
+    }
     if (policy_composer_action(presentation->conversation.phase, presentation->running, &action) != FC_OK) {
         presentation->failure ← 1;
         report_problem(presentation, "Policy unavailable: submission disabled");
@@ -509,7 +526,7 @@ static void send_or_cancel(Presentation *presentation) {
             if (presentation->http2 && transport_boundary_cancel(&presentation->network) != FC_OK)
                 report_problem(presentation, "Cancellation transport unavailable; outcome remains pending");
         }
-    } else if ((action == POLICY_RETRY ? retry_request(&presentation->conversation) :
+    } else if ((action == POLICY_RETRY ? retry_request_to(&presentation->conversation, &provider) :
                 action == POLICY_SUBMIT ? submit_composer(presentation) : FC_REJECTED) == FC_OK) {
         presentation->viewport ← 0;
         presentation->fenced ← 0;
