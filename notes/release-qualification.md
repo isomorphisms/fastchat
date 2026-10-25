@@ -38,3 +38,32 @@ The shared producer registry currently contains Wegert only; FastChat's
 registration must use its own reviewed paired recipe. The existing pinned
 Grease source-producer repair has its own qualification gate and cannot be
 called accepted merely because an equivalent downloaded runtime succeeds.
+
+## Concrete shared-production boundary
+
+The application supplies `scripts/build-paired.grease` for the existing FP
+registered Android stage. Its `.sh` file is only the fixed Bash entry interface
+required by that stage; Grease remains the producer implementation. The recipe
+uses the same native, HTTP/2, packager, signer and repeat-production procedures
+as the hosted matrix, then leaves independent ai-ci admission to FP.
+
+The build host must explicitly supply GREASE_BINARY, FC_NDK_ROOT,
+FC_ICKY_LUA_SOURCE, FC_HTTP2_SOURCES, FC_CMAKE, FC_ICK_ARM_DRIVER,
+FC_ICK_ARM_SUPPORT, FC_ICK_ARM64_DRIVER and FC_ICK_ARM64_SUPPORT, plus the
+existing SDK, Cat Food and packager inputs. It performs no phone-side builds.
+
+At Cat Food main `eafd7fa9e61138a664b205bf8ba82ec6837bbbb9`, the actual
+`plan-android-build` command rejects this application with
+`missing or duplicate approved launcher identity`. The required registration
+already exists in isomorphisms/catfood PR #136, “FC-M2/M4: register FastChat
+planning identity and classify captured devices”:
+https://github.com/isomorphisms/catfood/pull/136 . Reuse that work.
+
+The independent Grease repair isomorphisms/fastchat PR #16, “Repair remaining
+FastChat workflows with pinned Grease producer”
+(https://github.com/isomorphisms/fastchat/pull/16), still fails its source
+producer at the `builtin-trap` spec group: four reference-shell failures against
+the existing allowance of two. Its actual job log was inspected; this is not
+an accepted or waived producer. The current test candidate retains the existing
+digest-verified downloaded Grease bytes. Integrating an unqualified repair
+would not satisfy production acceptance.

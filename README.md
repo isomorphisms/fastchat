@@ -15,7 +15,7 @@ live-provider and independent producer acceptance.**
 - NativeActivity with no application DEX, Java, Kotlin or Gradle.
 
 Start with [installation and provider setup](INSTALL.md). The work continues in
-[isomorphisms/fastchat PR #17, “FC-UI/CONTROL: repair composer and preserve attempt provider identity”](https://github.com/isomorphisms/fastchat/pull/17).
+[isomorphisms/fastchat PR #17, “Native FastChat: composer, provider setup, durable drafts and paired APKs”](https://github.com/isomorphisms/fastchat/pull/17).
 Use only the signed artifact and source revision identified by its receipt.
 
 ## Hardware evidence

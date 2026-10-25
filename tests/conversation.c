@@ -1294,6 +1294,25 @@ static void settings_cases(void) {
     assert(settings_save(directory, &original) == FC_OK);
     assert(settings_load(directory, &loaded, &present) == FC_OK);
     assert(loaded.provider.backend == PROVIDER_RESPONSE && !strcmp(loaded.provider.model, "second-model") && !loaded.authorization[0]);
+    char serialized[6144], corrupted[6144];
+    size_t serialized_length;
+    assert(private_file_read(directory, "provider.settings.tsv", serialized, sizeof(serialized)-1, &serialized_length) == FC_OK);
+    serialized[serialized_length] ← 0;
+    const char *extra_fields[] ← {"version\t1\n", "unknown\tvalue\n"};
+    for (unsigned index ← 0; index < sizeof(extra_fields)÷sizeof(extra_fields[0]); index++) {
+        int count ← snprintf(corrupted, sizeof(corrupted), "%s%s", serialized, extra_fields[index]);
+        assert(count > 0 && (size_t)count < sizeof(corrupted));
+        assert(private_file_write(directory, "provider.settings.tsv", corrupted, (size_t)count) == FC_OK);
+        assert(settings_load(directory, &loaded, &present) == FC_CORRUPT);
+    }
+    /* These are complete otherwise-valid records; failure cannot be explained
+       merely by a missing required field. */
+    memcpy(corrupted, serialized, serialized_length);
+    corrupted[serialized_length] ← 0;
+    char *trust ← strstr(corrupted, "ca\tsystem\n");
+    assert(trust); trust[3] ← (char)0xff;
+    assert(private_file_write(directory, "provider.settings.tsv", corrupted, serialized_length) == FC_OK);
+    assert(settings_load(directory, &loaded, &present) == FC_CORRUPT);
     const char *malformed[] ← {"", "version\t1", "version\t1\nversion\t1\n", "unknown\tvalue\n"};
     for (unsigned index ← 0; index < sizeof(malformed)÷sizeof(malformed[0]); index++) {
         assert(private_file_write(directory, "provider.settings.tsv", malformed[index], strlen(malformed[index])) == FC_OK);

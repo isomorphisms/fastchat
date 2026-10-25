@@ -14,6 +14,8 @@ void private_bytes_clear(void *bytes, size_t length) {
 static int single_line(const char *value, size_t capacity, int empty) {
     size_t length ← strnlen(value, capacity);
     if (length == capacity || (!empty && !length)) return 0;
+    int valid;
+    if (complete_utf8_prefix((const unsigned char *)value, length, &valid) != length || !valid) return 0;
     for (size_t index ← 0; index < length; index++)
         if ((unsigned char)value[index] < 32 || (unsigned char)value[index] == 127) return 0;
     return 1;
@@ -21,6 +23,7 @@ static int single_line(const char *value, size_t capacity, int empty) {
 int settings_valid(const ProviderSettings *settings) {
     if (!settings || !attempt_provider_valid(&settings->provider)
         || (settings->provider.backend != PROVIDER_CHAT && settings->provider.backend != PROVIDER_RESPONSE)
+        || settings->provider.path[1] == '/'
         || !single_line(settings->ca, sizeof(settings->ca), 0)
         || (strcmp(settings->ca, "system") && settings->ca[0] != '/')
         || !single_line(settings->authorization, sizeof(settings->authorization), 1)) return 0;

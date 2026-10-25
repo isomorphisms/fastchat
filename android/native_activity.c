@@ -131,6 +131,19 @@ static jmethodID method(JNIEnv *environment, jobject object, const char *name, c
     (*environment)->DeleteLocalRef(environment, type);
     return result;
 }
+static void bound_editor(JNIEnv *environment, jobject editor, int length) {
+    jclass filter_type ← (*environment)->FindClass(environment, "android/text/InputFilter");
+    jclass limit_type ← (*environment)->FindClass(environment, "android/text/InputFilter$LengthFilter");
+    jobject limit ← (*environment)->NewObject(environment, limit_type,
+        (*environment)->GetMethodID(environment, limit_type, "<init>", "(I)V"), length);
+    jobjectArray filters ← (*environment)->NewObjectArray(environment, 1, filter_type, limit);
+    (*environment)->CallVoidMethod(environment, editor,
+        method(environment, editor, "setFilters", "([Landroid/text/InputFilter;)V"), filters);
+    (*environment)->DeleteLocalRef(environment, filters);
+    (*environment)->DeleteLocalRef(environment, limit);
+    (*environment)->DeleteLocalRef(environment, limit_type);
+    (*environment)->DeleteLocalRef(environment, filter_type);
+}
 static unsigned decode_codepoint(const unsigned char *bytes, size_t *position) {
     unsigned first ← bytes[*position];
     *position ← *position + 1;
@@ -333,7 +346,8 @@ static void present_stored_response(Presentation *presentation) {
     }
     char heading[160];
     snprintf(heading, sizeof(heading), "FastChat | %s",
-        !selected_request ? (presentation->http2 ? presentation->model : "test responder (no model configured)")
+        !selected_request ? (presentation->configuration_failure ? "provider setup required"
+            : presentation->http2 ? presentation->model : "test responder (no model configured)")
         : selected.provider.backend == PROVIDER_FIXTURE ? "test responder"
         : selected.provider.backend == PROVIDER_UNRECORDED ? "provider not recorded"
         : selected.provider.model);
@@ -451,6 +465,7 @@ static void create_composer(Presentation *presentation) {
     jclass edit_type ← (*environment)->FindClass(environment, "android/widget/EditText");
     jobject edit ← (*environment)->NewObject(environment, edit_type,
         (*environment)->GetMethodID(environment, edit_type, "<init>", "(Landroid/content/Context;)V"), activity);
+    bound_editor(environment, edit, 4096);
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setInputType", "(I)V"), 0x20001); /* text + multiline */
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setFocusableInTouchMode", "(Z)V"), JNI_TRUE);
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setMinLines", "(I)V"), 1);
@@ -771,7 +786,7 @@ static void content_changed(ANativeActivity *activity, const ARect *rectangle) {
     Presentation *presentation ← activity->instance;
     presentation->content_bottom ← rectangle->bottom;
     if (presentation->settings_visible) {
-        detach_settings(presentation); attach_settings(presentation);
+        attach_settings(presentation);
         present_stored_response(presentation); return;
     }
     /* Reattach against the new parent frame after resize/IME/rotation. */

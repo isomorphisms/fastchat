@@ -121,7 +121,7 @@ static void detach_settings(Presentation *presentation) {
     presentation->settings_attached ← 0;
 }
 static void attach_settings(Presentation *presentation) {
-    if (!presentation->settings_visible || presentation->settings_attached || !presentation->window || !presentation->settings_panel) return;
+    if (!presentation->settings_visible || !presentation->window || !presentation->settings_panel) return;
     JNIEnv *environment ← presentation->activity->env;
     if ((*environment)->PushLocalFrame(environment, 12) < 0) return;
     jobject activity ← presentation->activity->clazz;
@@ -141,7 +141,7 @@ static void attach_settings(Presentation *presentation) {
         (*environment)->SetIntField(environment, presentation->settings_layout,
             (*environment)->GetFieldID(environment, layout_type, "height", "I"), height);
         (*environment)->CallVoidMethod(environment, presentation->composer_manager,
-            method(environment, presentation->composer_manager, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V"),
+            method(environment, presentation->composer_manager, presentation->settings_attached ? "updateViewLayout" : "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V"),
             presentation->settings_panel, presentation->settings_layout);
         if (!clear_java_failure(presentation, environment)) presentation->settings_attached ← 1;
     }
@@ -175,6 +175,8 @@ static void show_settings(Presentation *presentation) {
             jclass edit_type ← (*environment)->FindClass(environment, "android/widget/EditText");
             jobject edit ← (*environment)->NewObject(environment, edit_type,
                 (*environment)->GetMethodID(environment, edit_type, "<init>", "(Landroid/content/Context;)V"), activity);
+            const int limits[] ← {511, 255, 128, 31, 2047, 2047};
+            bound_editor(environment, edit, limits[index]);
             (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setInputType", "(I)V"), index == 4 ? 0x81 : 0x80001);
             (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setSingleLine", "(Z)V"), JNI_TRUE);
             (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setImeOptions", "(I)V"), 0x10000000);

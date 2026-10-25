@@ -1,4 +1,8 @@
-# fastchat
+# Original project background
+
+Preserved from the README at `7add1607b43a3ecdfb8175de950955f5b7b22b11`.
+Prices, design observations and build status below are historical; see
+[the current README](../README.md) for the application candidate.
 
 **FastChat is a deliberately small ChatGPT controller for the cheapest phone we can get.**
 
@@ -8,7 +12,7 @@ The use case is simple: put a fast, low-overhead interface on a very cheap Andro
 
 The feature set and Android process model are **not frozen**.
 
-The [FC-U1 native candidate](notes/native-candidate.md) converges durable disk
+The [FC-U1 native candidate](native-candidate.md) converges durable disk
 streaming, a shared response arena, the executable Idriç lifecycle and bounded
 HTTP/2 beneath one application boundary. Its deterministic backend remains
 available for credential-free acceptance. The candidate's hosted gates produce
@@ -20,7 +24,7 @@ A couple of ChatGPT clones are not enough evidence for either one, and source re
 
 Implementation preferences — including small native code, C built through ICK where appropriate, D experiments, and Idriç type sketches — do not substitute for requirements discovery.
 
-See [reference-code/](reference-code/) for the curated reference map and [the dated broad GitHub sweep](reference-code/sweep-2026-10-06.md). The sweep is intentionally wider than the code FastChat is likely to use.
+See [reference-code/](../reference-code/) for the curated reference map and [the dated broad GitHub sweep](../reference-code/sweep-2026-10-06.md). The sweep is intentionally wider than the code FastChat is likely to use.
 
 The reference target is the **MIRO A1**, an Android 14 Go phone in roughly the $60 class.
 
