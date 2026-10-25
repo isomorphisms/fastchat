@@ -1,54 +1,56 @@
-# fastchat
+# FastChat
 
-**FastChat is a deliberately small ChatGPT controller for the cheapest phone we can get.**
+A small native Android interface for talking to AI agents and reading their
+answers on inexpensive phones. Replies stream into a durable disk store;
+reading uses a bounded window instead of keeping whole answers in memory.
 
-The use case is simple: put a fast, low-overhead interface on a very cheap Android phone and use it to talk to agents. The phone does not need to be a general-purpose AI workstation. It needs to let a human read a thread, type or dictate, send work to an agent, and get the result back without the interface overwhelming the hardware.
+**Test candidate. Production release is BLOCKED pending physical A1/C67,
+live-provider and independent producer acceptance.**
 
-## Design status: deliberately open
+- Platform keyboard, Unicode composer, selection and clipboard.
+- Streaming replies, Stop and an explicit Retry for uncertain delivery.
+- Durable conversation history and provider/model identity for each attempt.
+- In-app HTTPS provider setup for Chat Completions or Responses requests.
+- Private, atomic settings replacement and draft checkpoints across restart.
+- NativeActivity with no application DEX, Java, Kotlin or Gradle.
 
-The feature set and Android process model are **not frozen**.
+Start with [installation and provider setup](INSTALL.md). The work continues in
+[isomorphisms/fastchat PR #17, “FC-UI/CONTROL: repair composer and preserve attempt provider identity”](https://github.com/isomorphisms/fastchat/pull/17).
+Use only the signed artifact and source revision identified by its receipt.
 
-The [FC-U1 native candidate](notes/native-candidate.md) converges durable disk
-streaming, a shared response arena, the executable Idriç lifecycle and bounded
-HTTP/2 beneath one application boundary. Its deterministic backend remains
-available for credential-free acceptance. The candidate's hosted gates produce
-an exact-source, public-test-signed A1 APK; physical and live-account acceptance
-remain NOT_RUN. Authoritative A1/C67 paired production is blocked by the shared
-route's missing predecessor closure, recorded in that note.
+## Hardware evidence
 
-A couple of ChatGPT clones are not enough evidence for either one, and source review cannot replace physical observation. In particular, the Shizuku/runtime inventory of the current ChatGPT app on the target phones is not complete yet, so FastChat must not assume that the processes, services, WebView/renderer behavior, media paths, background work, or lifecycle boundaries already identified are the whole set.
+MIRO A1 is primary; MIRO C67 is its ARM64 companion. Hosted compilation and
+packaging do not establish keyboard behavior, readability or handset speed.
 
-Implementation preferences — including small native code, C built through ICK where appropriate, D experiments, and Idriç type sketches — do not substitute for requirements discovery.
+| Measurement | Evidence |
+| --- | --- |
+| Previous ARM32 APK | 2,257,692 bytes at source `7add1607b43a3ecdfb8175de950955f5b7b22b11` |
+| Current A1/C67 keyboard and reading | Physical acceptance NOT_RUN |
+| Current handset RAM, latency and responsiveness | NOT_MEASURED |
+| Current live-provider conversation and restart | NOT_RUN |
 
-See [reference-code/](reference-code/) for the curated reference map and [the dated broad GitHub sweep](reference-code/sweep-2026-10-06.md). The sweep is intentionally wider than the code FastChat is likely to use.
+The [release checklist](notes/release-qualification.md) records the remaining
+conditions. No phone performance claim is inferred from host benchmarks.
 
-The reference target is the **MIRO A1**, an Android 14 Go phone in roughly the $60 class.
+## Inspect the implementation
 
-[Buy the MIRO A1 on Amazon — affiliate link](https://www.amazon.com/dp/B0FJX2FTZF?tag=macguyver03-20)
+[Architecture](notes/process-architecture.md),
+[durable streaming](notes/disk-path.md),
+[attempt identity](notes/attempt-provider.md), and
+[provider setup](notes/provider-setup.md).
+The renderer supports a conservative Markdown subset; see the installation
+notes for limits on prompts, context, event size and selection.
 
-Amazon prices move. The directly recoverable Amazon listing for ASIN `B0FJX2FTZF` has recently been above $60, while current listings for the same phone remain around the $60 mark. The project target is therefore the **~$60 phone**, not a frozen claim that a retailer will always hold one exact price.
+Compiler and runtime work:
+[ICK](https://github.com/dilapidated-shed/ick),
+[Idriç](https://github.com/isomorphisms/Idric),
+[Icky Lua](https://github.com/isomorphisms/lua),
+[Grease](https://github.com/dilapidated-shed/grease), and
+[native Android packaging](https://github.com/isomorphisms/android-NDK).
+The experimental disk-first, Compose and HTTP/3 comparisons remain available
+on their existing branches.
 
-## Why this exists
-
-Dedicated agent computers are nifty. The [Lapis One](https://www.pamir.ai/) is currently advertised around **$499**, with a **$599** regular/compare-at price depending on batch and timing. If Pamir wants to send me one, I will definitely use it.
-
-But I can talk to my agents with just a phone.
-
-That changes the engineering question. Instead of asking how much computer an AI interface can consume, FastChat asks how little computer the human side actually needs. The expensive compute can live elsewhere. The controller should remain small, responsive, inspectable, and cheap.
-
-The intended hardware baseline is deliberately severe: the cheapest practical phone available on Amazon, rather than a flagship phone or a purpose-built $500–$600 agent appliance.
-
-## Cheap hardware is also a compiler target
-
-This phone is not only a UI target. It is physical acceptance hardware for compiler work:
-
-- [ICK](https://github.com/dilapidated-shed/ick) — compiler/toolchain work including Android ARM targets.
-- [Idriç ARM/Thumb](https://github.com/fuego-ironworks/idric-arm-thumb) — work in progress on ARM/Thumb compiler back ends and physical-phone execution.
-
-Those projects are works in progress developing compiler back ends specifically for the cheapest phone available on Amazon. The point is not to spend the extra hardware budget on wider assumptions. It is to make useful software run on the cheap machine we actually have.
-
-FastChat should eventually be able to consume ChatGPT threads as one possible front end to the same broader thread/skein model. It should not require a large browser-shaped application merely to talk to an agent.
-
-[MIRO A1 on Amazon — affiliate link](https://www.amazon.com/dp/B0FJX2FTZF?tag=macguyver03-20)
+[Project background and hardware motivation](notes/project-background.md).
 
 **Full luxury communism now.**

@@ -94,7 +94,20 @@ static Result configure_transport(Presentation *presentation) {
 }
 static void set_field(Presentation *presentation, jobject field, const char *value) {
     JNIEnv *environment ← presentation->activity->env;
-    jstring text ← (*environment)->NewStringUTF(environment, value);
+    jchar units[2048];
+    size_t length ← strlen(value), position ← 0, count ← 0;
+    int valid;
+    if (length > 2048 || complete_utf8_prefix((const unsigned char *)value, length, &valid) != length || !valid) return;
+    while (position < length) {
+        unsigned codepoint ← decode_codepoint((const unsigned char *)value, &position);
+        if (codepoint < 0x10000) units[count++] ← (jchar)codepoint;
+        else {
+            codepoint ← codepoint - 0x10000;
+            units[count++] ← (jchar)(0xd800 + (codepoint >> 10));
+            units[count++] ← (jchar)(0xdc00 + (codepoint & 0x3ff));
+        }
+    }
+    jstring text ← (*environment)->NewString(environment, units, (jsize)count);
     if (text) (*environment)->CallVoidMethod(environment, field,
         method(environment, field, "setText", "(Ljava/lang/CharSequence;)V"), text);
     if (text) (*environment)->DeleteLocalRef(environment, text);
