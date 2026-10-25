@@ -3,6 +3,7 @@
 #include "fixture_transport.h"
 #include "render_policy.h"
 #include "provider.h"
+#include "settings.h"
 #include <assert.h>
 #include <dirent.h>
 #include <errno.h>
@@ -1250,6 +1251,81 @@ static void giant_framed_offer_case(void) {
     remove_directory(path);
 }
 
+static int same_settings(const ProviderSettings *left, const ProviderSettings *right) {
+    return left->provider.backend == right->provider.backend
+        && !strcmp(left->provider.origin, right->provider.origin)
+        && !strcmp(left->provider.path, right->provider.path)
+        && !strcmp(left->provider.model, right->provider.model)
+        && !strcmp(left->ca, right->ca) && !strcmp(left->authorization, right->authorization);
+}
+static void settings_cases(void) {
+    char directory[] ← "/tmp/fastchat-settings-XXXXXX";
+    assert(mkdtemp(directory));
+    ProviderSettings original ← { .provider ← {PROVIDER_CHAT, "https://model.example", "/v1/chat/completions", "example-model"},
+        .ca ← "system", .authorization ← "Authorization: Bearer fixture-only-key" };
+    ProviderSettings loaded;
+    int present;
+    assert(settings_load(directory, &loaded, &present) == FC_OK && !present);
+    assert(settings_save(directory, &original) == FC_OK);
+    assert(settings_load(directory, &loaded, &present) == FC_OK && present);
+    assert(same_settings(&original, &loaded));
+    char filename[256];
+    snprintf(filename, sizeof(filename), "%s/provider.settings.tsv", directory);
+    struct stat status;
+    assert(stat(filename, &status) == 0 && (status.st_mode & 0777) == 0600);
+    /* Rejected settings must leave the last complete configuration intact. */
+    ProviderSettings rejected ← original;
+    strcpy(rejected.authorization, "Authorization: Bearer key\r\nInjected: yes");
+    assert(settings_save(directory, &rejected) == FC_REJECTED);
+    rejected ← original; strcpy(rejected.provider.origin, "https://user:secret@model.example");
+    assert(settings_save(directory, &rejected) == FC_REJECTED);
+    rejected ← original; strcpy(rejected.provider.model, "unsupported model");
+    assert(settings_save(directory, &rejected) == FC_REJECTED);
+    assert(settings_load(directory, &loaded, &present) == FC_OK && same_settings(&original, &loaded));
+    /* Interrupted replacement is never read as the committed settings. */
+    assert(private_file_write(directory, ".provider.settings.tsv.pending", "partial", 7) == FC_OK);
+    assert(settings_load(directory, &loaded, &present) == FC_OK && same_settings(&original, &loaded));
+    snprintf(filename, sizeof(filename), "%s/.provider.settings.tsv.pending", directory);
+    assert(unlink(filename) == 0);
+    original.provider.backend ← PROVIDER_RESPONSE;
+    strcpy(original.provider.path, "/v1/responses");
+    strcpy(original.provider.model, "second-model");
+    original.authorization[0] ← 0;
+    assert(settings_save(directory, &original) == FC_OK);
+    assert(settings_load(directory, &loaded, &present) == FC_OK);
+    assert(loaded.provider.backend == PROVIDER_RESPONSE && !strcmp(loaded.provider.model, "second-model") && !loaded.authorization[0]);
+    const char *malformed[] ← {"", "version\t1", "version\t1\nversion\t1\n", "unknown\tvalue\n"};
+    for (unsigned index ← 0; index < sizeof(malformed)÷sizeof(malformed[0]); index++) {
+        assert(private_file_write(directory, "provider.settings.tsv", malformed[index], strlen(malformed[index])) == FC_OK);
+        assert(settings_load(directory, &loaded, &present) == FC_CORRUPT && present);
+        assert(!loaded.authorization[0] && loaded.provider.backend == PROVIDER_UNRECORDED);
+    }
+    assert(private_file_write(directory, "provider.settings.tsv", "version\t1\n\0hidden\n", 18) == FC_OK);
+    assert(settings_load(directory, &loaded, &present) == FC_CORRUPT);
+    assert(settings_save(directory, &original) == FC_OK);
+    snprintf(filename, sizeof(filename), "%s/provider.settings.tsv", directory);
+    assert(chmod(filename, 0644) == 0);
+    assert(settings_load(directory, &loaded, &present) == FC_CORRUPT);
+    assert(chmod(filename, 0600) == 0);
+    /* Exact UTF-16 bytes survive restart, including a supplementary character.
+       Empty checkpoints clear a prior draft; overlong reads fail closed. */
+    uint16_t draft[] ← {0x03bb, 0x000a, 0xd83d, 0xde00};
+    unsigned char bytes[32];
+    size_t length;
+    assert(private_file_write(directory, "composer.draft", draft, sizeof(draft)) == FC_OK);
+    assert(private_file_read(directory, "composer.draft", bytes, sizeof(bytes), &length) == FC_OK
+        && length == sizeof(draft) && !memcmp(bytes, draft, length));
+    assert(private_file_read(directory, "composer.draft", bytes, 1, &length) == FC_CORRUPT && !length);
+    assert(private_file_write(directory, "composer.draft", NULL, 0) == FC_OK);
+    assert(private_file_read(directory, "composer.draft", bytes, sizeof(bytes), &length) == FC_OK && !length);
+    snprintf(filename, sizeof(filename), "%s/.composer.draft.pending", directory);
+    assert(symlink("provider.settings.tsv", filename) == 0);
+    assert(private_file_write(directory, "composer.draft", draft, sizeof(draft)) == FC_STORAGE_ERROR);
+    assert(settings_load(directory, &loaded, &present) == FC_OK && !strcmp(loaded.provider.model, "second-model"));
+    remove_directory(directory);
+    puts("PASS private provider setup, rejected credential injection, atomic replacement, malformed settings and bounded durable drafts");
+}
+
 int main(int argc, char **argv) {
     if (argc == 2 && strcmp(argv[1], "--arena-reuse") == 0) { arena_reuse_case(); return 0; }
     if (argc == 3 && strcmp(argv[1], "replay") == 0) return fresh_process_replay(argv[2]);
@@ -1266,6 +1342,7 @@ int main(int argc, char **argv) {
     production_provider_cases();
     provider_context_cases();
     provider_identity_cases();
+    settings_cases();
     giant_framed_offer_case();
     prefix_visibility_case();
     response_cases();

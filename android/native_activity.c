@@ -3,17 +3,21 @@
 #include "fixture_transport.h"
 #include "render_policy.h"
 #include "transport_boundary.h"
+#include "settings.h"
 #include <android/input.h>
 #include <android/log.h>
 #include <android/looper.h>
 #include <android/native_activity.h>
 #include <android/native_window_jni.h>
 #include <errno.h>
+#include <dirent.h>
+#include <fcntl.h>
 #include <jni.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/timerfd.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 #ifndef FC_SOURCE_REVISION
@@ -30,6 +34,11 @@ typedef struct {
     jobject composer;
     jobject composer_manager, composer_layout;
     int composer_attached;
+    jobject settings_panel, settings_layout, settings_fields[6];
+    int settings_visible, settings_attached, configuration_failure, acceptance;
+    uint64_t draft_check_ns;
+    jchar draft_checkpoint[4096];
+    size_t draft_checkpoint_size;
     int acceptance_pending;
     Conversation conversation;
     FixtureTransport transport;
@@ -53,6 +62,13 @@ typedef struct {
     int touch_down;
     char message[160];
 } Presentation;
+
+static void show_settings(Presentation *);
+static void save_settings(Presentation *);
+static void close_settings(Presentation *);
+static void attach_settings(Presentation *);
+static void detach_settings(Presentation *);
+static void persist_draft(Presentation *);
 
 static uint64_t monotonic_ns(void) {
     struct timespec time;
@@ -293,6 +309,18 @@ static void present_stored_response(Presentation *presentation) {
     jobject paint ← (*environment)->NewObject(environment, paint_type,
         (*environment)->GetMethodID(environment, paint_type, "<init>", "(I)V"), 1);
     (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setColor", "(I)V"), (jint)0xff24282b);
+    if (presentation->settings_visible) {
+        draw_label(environment, canvas, paint, "Provider setup | API access", 16*density, 28*density, 18*density);
+        draw_label(environment, canvas, paint, "Use your provider's API key and model name.", 16*density, 52*density, 13*density);
+        draw_label(environment, canvas, paint, "Save                         Back", 16*density, 82*density, 18*density);
+        if (presentation->message[0]) draw_label(environment, canvas, paint, presentation->message,
+            16*density, 106*density, 12*density);
+        (*environment)->CallVoidMethod(environment, surface,
+            method(environment, surface, "unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V"), canvas);
+        clear_java_failure(presentation, environment);
+        (*environment)->PopLocalFrame(environment, NULL);
+        return;
+    }
     HistoryTurn selected ← presentation->selected_turn;
     uint64_t selected_request ← presentation->viewed_request ? presentation->viewed_request : presentation->conversation.request;
     Result selected_result ← selected_request ? FC_OK : FC_REJECTED;
@@ -311,6 +339,8 @@ static void present_stored_response(Presentation *presentation) {
         : selected.provider.model);
     draw_label(environment, canvas, paint, heading, 16*density, 28*density, 14*density);
     draw_label(environment, canvas, paint, phase_name(selected.phase), 16*density, 52*density, 16*density);
+    if (!presentation->acceptance) draw_label(environment, canvas, paint, "Setup",
+        presentation->width - 76*density, 52*density, 16*density);
     draw_label(environment, canvas, paint, "Older turn       Newer turn       Latest", 16*density, 82*density, 15*density);
     draw_label(environment, canvas, paint, "Previous       Next       Start       Copy", 16*density, 106*density, 15*density);
     float y ← 140*density;
@@ -379,6 +409,7 @@ static void detach_composer(Presentation *presentation) {
     presentation->composer_attached ← 0;
 }
 static void attach_composer(Presentation *presentation) {
+    if (presentation->settings_visible) { attach_settings(presentation); return; }
     if (!presentation->composer || presentation->composer_attached || !presentation->window) return;
     JNIEnv *environment ← presentation->activity->env;
     if ((*environment)->PushLocalFrame(environment, 12) < 0) return;
@@ -456,17 +487,18 @@ static Result selected_provider(Presentation *presentation, AttemptProvider *pro
     provider->backend ← PROVIDER_FIXTURE;
     return FC_OK;
 }
-static Result submit_composer(Presentation *presentation) {
-    if (!presentation->composer || !presentation->composer_attached) {
-        report_problem(presentation, "Message input unavailable"); return FC_REJECTED;
-    }
+static Result editor_bytes(Presentation *presentation, jobject editor, char *bytes, size_t capacity, size_t *written) {
+    *written ← 0;
     JNIEnv *environment ← presentation->activity->env;
-    jobject editable ← (*environment)->CallObjectMethod(environment, presentation->composer,
-        method(environment, presentation->composer, "getText", "()Landroid/text/Editable;"));
+    jobject editable ← (*environment)->CallObjectMethod(environment, editor,
+        method(environment, editor, "getText", "()Landroid/text/Editable;"));
+    if (clear_java_failure(presentation, environment) || !editable) return FC_REJECTED;
     jstring text ← (*environment)->CallObjectMethod(environment, editable, method(environment, editable, "toString", "()Ljava/lang/String;"));
+    if (clear_java_failure(presentation, environment) || !text) {
+        (*environment)->DeleteLocalRef(environment, editable); return FC_REJECTED;
+    }
     const jchar *units ← (*environment)->GetStringChars(environment, text, NULL);
     jsize count ← (*environment)->GetStringLength(environment, text);
-    char bytes[FC_PROMPT_BYTES];
     size_t length ← 0;
     Result result ← FC_OK;
     if (!units) result ← FC_REJECTED;
@@ -478,7 +510,7 @@ static Result submit_composer(Presentation *presentation) {
             codepoint ← 0x10000 + ((codepoint - 0xd800) << 10) + units[index] - 0xdc00;
         } else if (codepoint >= 0xdc00 && codepoint <= 0xdfff) { result ← FC_INVALID_TEXT; break; }
         unsigned width ← codepoint < 0x80 ? 1 : codepoint < 0x800 ? 2 : codepoint < 0x10000 ? 3 : 4;
-        if (length + width > sizeof(bytes)) { result ← FC_REJECTED; break; }
+        if (length + width > capacity) { result ← FC_REJECTED; break; }
         if (width == 1) bytes[length] ← (char)codepoint;
         else {
             bytes[length] ← (char)((width == 2 ? 0xc0 : width == 3 ? 0xe0 : 0xf0) | (codepoint >> (6*(width-1))));
@@ -488,6 +520,20 @@ static Result submit_composer(Presentation *presentation) {
         length ← length + width;
     }
     if (units) (*environment)->ReleaseStringChars(environment, text, units);
+    (*environment)->DeleteLocalRef(environment, text);
+    (*environment)->DeleteLocalRef(environment, editable);
+    if (clear_java_failure(presentation, environment)) result ← FC_REJECTED;
+    if (result == FC_OK) *written ← length;
+    return result;
+}
+static Result submit_composer(Presentation *presentation) {
+    if (!presentation->composer || !presentation->composer_attached) {
+        report_problem(presentation, "Message input unavailable"); return FC_REJECTED;
+    }
+    JNIEnv *environment ← presentation->activity->env;
+    char bytes[FC_PROMPT_BYTES];
+    size_t length;
+    Result result ← editor_bytes(presentation, presentation->composer, bytes, sizeof(bytes), &length);
     if (result == FC_REJECTED) report_problem(presentation, "Message exceeds 1024 UTF-8 bytes");
     if (result == FC_INVALID_TEXT) report_problem(presentation, "Message contains invalid Unicode");
     if (result == FC_OK && !length) {
@@ -496,18 +542,20 @@ static Result submit_composer(Presentation *presentation) {
     AttemptProvider provider;
     if (result == FC_OK) result ← selected_provider(presentation, &provider);
     if (result == FC_OK) result ← submit_text_to(&presentation->conversation, bytes, length, &provider);
-    (*environment)->DeleteLocalRef(environment, text);
-    (*environment)->DeleteLocalRef(environment, editable);
     if (result == FC_OK) {
         jstring empty ← (*environment)->NewStringUTF(environment, "");
         (*environment)->CallVoidMethod(environment, presentation->composer,
             method(environment, presentation->composer, "setText", "(Ljava/lang/CharSequence;)V"), empty);
         (*environment)->DeleteLocalRef(environment, empty);
+        persist_draft(presentation);
     }
     return result;
 }
 static void send_or_cancel(Presentation *presentation) {
     if (presentation->failure || presentation->timer < 0) return;
+    if (presentation->configuration_failure || presentation->settings_visible) {
+        report_problem(presentation, "Open Setup to configure the provider"); return;
+    }
     presentation->message[0] ← 0;
     ComposerAction action;
     AttemptProvider provider;
@@ -584,7 +632,16 @@ static int on_input(int descriptor, int events, void *context) {
             float x ← AMotionEvent_getX(event, 0), y ← AMotionEvent_getY(event, 0);
             int bottom ← presentation->content_bottom > 0 ? presentation->content_bottom : presentation->height;
             float vertical ← y - presentation->touch_y, horizontal ← x - presentation->touch_x;
-            if (presentation->touch_down && presentation->touch_y > 120*presentation->density &&
+            if (presentation->settings_visible) {
+                if (y >= 60*presentation->density && y < 94*presentation->density) {
+                    if (x < presentation->width÷2) save_settings(presentation);
+                    else close_settings(presentation);
+                }
+                handled ← 1;
+            } else if (!presentation->acceptance && y >= 30*presentation->density && y < 60*presentation->density
+                && x > presentation->width - 96*presentation->density) {
+                show_settings(presentation); handled ← 1;
+            } else if (presentation->touch_down && presentation->touch_y > 120*presentation->density &&
                 presentation->touch_y < bottom - 112*presentation->density &&
                 (vertical > 48*presentation->density || vertical < -48*presentation->density) &&
                 vertical*vertical > horizontal*horizontal) {
@@ -635,6 +692,11 @@ static int on_tick(int descriptor, int events, void *context) {
     }
     uint64_t ticks;
     if (read(descriptor, &ticks, sizeof(ticks)) != sizeof(ticks)) return 1;
+    uint64_t draft_now ← monotonic_ns();
+    if (draft_now - presentation->draft_check_ns >= 1000000000u) {
+        presentation->draft_check_ns ← draft_now;
+        persist_draft(presentation);
+    }
     if (!presentation->running) return 1;
     Result result ← FC_OK;
     if (presentation->http2) {
@@ -700,7 +762,7 @@ static void window_created(ANativeActivity *activity, ANativeWindow *window) {
 }
 static void window_destroyed(ANativeActivity *activity, ANativeWindow *window) {
     Presentation *presentation ← activity->instance;
-    if (presentation->window == window) { detach_composer(presentation); ANativeWindow_release(window); presentation->window ← NULL; }
+    if (presentation->window == window) { detach_settings(presentation); detach_composer(presentation); ANativeWindow_release(window); presentation->window ← NULL; }
 }
 static void redraw(ANativeActivity *activity, ANativeWindow *window) {
     (void)window; present_stored_response(activity->instance);
@@ -708,6 +770,10 @@ static void redraw(ANativeActivity *activity, ANativeWindow *window) {
 static void content_changed(ANativeActivity *activity, const ARect *rectangle) {
     Presentation *presentation ← activity->instance;
     presentation->content_bottom ← rectangle->bottom;
+    if (presentation->settings_visible) {
+        detach_settings(presentation); attach_settings(presentation);
+        present_stored_response(presentation); return;
+    }
     /* Reattach against the new parent frame after resize/IME/rotation. */
     if (presentation->composer_attached) {
         JNIEnv *environment ← activity->env;
@@ -735,7 +801,12 @@ static void input_destroyed(ANativeActivity *activity, AInputQueue *queue) {
     presentation->input ← NULL;
 }
 static void resumed(ANativeActivity *activity) { attach_composer(activity->instance); }
-static void stopped(ANativeActivity *activity) { detach_composer(activity->instance); }
+static void stopped(ANativeActivity *activity) {
+    Presentation *presentation ← activity->instance;
+    persist_draft(presentation);
+    detach_settings(presentation);
+    detach_composer(presentation);
+}
 static void *save_draft(ANativeActivity *activity, size_t *size) {
     Presentation *presentation ← activity->instance;
     *size ← 0;
@@ -764,6 +835,7 @@ static void *save_draft(ANativeActivity *activity, size_t *size) {
 }
 static void destroyed(ANativeActivity *activity) {
     Presentation *presentation ← activity->instance;
+    detach_settings(presentation);
     detach_composer(presentation);
     if (presentation->http2) transport_boundary_close(&presentation->network);
     else if (presentation->running && !presentation->conversation.poisoned) fixture_transport_lost(&presentation->transport);
@@ -771,13 +843,17 @@ static void destroyed(ANativeActivity *activity) {
     if (presentation->composer) (*activity->env)->DeleteGlobalRef(activity->env, presentation->composer);
     if (presentation->composer_layout) (*activity->env)->DeleteGlobalRef(activity->env, presentation->composer_layout);
     if (presentation->composer_manager) (*activity->env)->DeleteGlobalRef(activity->env, presentation->composer_manager);
+    if (presentation->settings_panel) (*activity->env)->DeleteGlobalRef(activity->env, presentation->settings_panel);
+    if (presentation->settings_layout) (*activity->env)->DeleteGlobalRef(activity->env, presentation->settings_layout);
+    for (unsigned index ← 0; index < 6; index++)
+        if (presentation->settings_fields[index]) (*activity->env)->DeleteGlobalRef(activity->env, presentation->settings_fields[index]);
     if (presentation->window) ANativeWindow_release(presentation->window);
     conversation_close(&presentation->conversation);
     policy_close();
     free(presentation);
     activity->instance ← NULL;
 }
-static Result configure_transport(Presentation *presentation) {
+static Result configure_legacy_transport(Presentation *presentation) {
     /* Missing configuration selects the credential-free acceptance backend.
        A present but malformed configuration fails closed; no network fallback. */
     char filename[4096];
@@ -833,6 +909,7 @@ static Result configure_transport(Presentation *presentation) {
     fclose(file);
     return result;
 }
+#include "provider_setup.inc"
 static int acceptance_intent(Presentation *presentation, char *store, size_t capacity, char *fixture) {
     JNIEnv *environment ← presentation->activity->env;
     if ((*environment)->PushLocalFrame(environment, 12) < 0) return -1;
@@ -877,6 +954,7 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t sav
     if (!presentation) { ANativeActivity_finish(activity); return; }
     presentation->activity ← activity;
     presentation->timer ← -1;
+    presentation->draft_checkpoint_size ← SIZE_MAX;
     presentation->density ← 1;
     presentation->line_start ← 1;
     presentation->conversation.journal ← -1;
@@ -897,6 +975,7 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t sav
     char path[4096];
     char acceptance_store[80] ← {0}, acceptance_fixture[8] ← {0};
     int acceptance ← acceptance_intent(presentation, acceptance_store, sizeof(acceptance_store), acceptance_fixture);
+    presentation->acceptance ← acceptance;
     int count ← snprintf(path, sizeof(path), "%s/%s", activity->internalDataPath,
                          acceptance == 1 ? acceptance_store : "conversation");
     if (acceptance < 0 || count < 0 || (size_t)count >= sizeof(path) || conversation_open(&presentation->conversation, path) != FC_OK || policy_open() != FC_OK) {
@@ -908,10 +987,16 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t sav
     /* A named acceptance store always selects the deterministic backend.
        It never opens the ordinary conversation or reads account settings. */
     if (!presentation->failure && !acceptance && configure_transport(presentation) != FC_OK) {
-        presentation->failure ← 1;
+        presentation->configuration_failure ← 1;
         report_problem(presentation, "Explicit transport profile unavailable; submission disabled");
     }
     create_composer(presentation);
+    jchar disk_draft[4096];
+    size_t disk_draft_size ← 0;
+    if (!acceptance && !saved && private_file_read(activity->internalDataPath, "composer.draft",
+        disk_draft, sizeof(disk_draft), &disk_draft_size) == FC_OK && disk_draft_size % sizeof(jchar) == 0) {
+        saved ← disk_draft; saved_size ← disk_draft_size;
+    }
     if (presentation->composer && saved && saved_size && saved_size <= 4096*sizeof(jchar) && saved_size % sizeof(jchar) == 0) {
         JNIEnv *environment ← activity->env;
         jstring draft ← (*environment)->NewString(environment, saved, (jsize)(saved_size ÷ sizeof(jchar)));

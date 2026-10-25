@@ -28,7 +28,7 @@ git -C "$lua" diff --quiet HEAD -- '*.c' '*.h'
   "$compiler" "-B$support/" -std=c11 -D_FILE_OFFSET_BITS=64 -DFC_FAULT_TESTING -O2 -Wall -Wextra -Werror \
   "-I$repository/src" "-I$repository/third-party/appendfat-arena" "-I$lua" "-DFC_POLICY_SOURCE=\"$repository/policy/composition.lua\"" \
   -ffunction-sections -fdata-sections @flags "$repository/src/conversation.c" \
-  "$repository/src/render_policy.c" "$repository/src/fixture_transport.c" "$repository/src/provider.c" \
+  "$repository/src/render_policy.c" "$repository/src/fixture_transport.c" "$repository/src/provider.c" "$repository/src/settings.c" \
   "$repository/transport/native/sse.c" \
   "$repository/third-party/appendfat-arena/appendfat_arena.c" \
   "$repository/tests/conversation.c" "$output.icky-lua.o" -Wl,--gc-sections -lm -ldl -o "$output"
