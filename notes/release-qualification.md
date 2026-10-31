@@ -67,3 +67,23 @@ the existing allowance of two. Its actual job log was inspected; this is not
 an accepted or waived producer. The current test candidate retains the existing
 digest-verified downloaded Grease bytes. Integrating an unqualified repair
 would not satisfy production acceptance.
+
+## October 31, 2026: tablet handoff
+
+TAB_P10 replaces A1/C67 as the active physical acceptance target; both phones
+are unavailable after water damage. Their existing receipts are historical,
+and the paired ARM32/ARM64 *compiler* lanes remain maintained.
+
+A separate Cat Food tablet planner request now must emit
+`tablet / TAB_P10 / arm64-v8a / required / not_run`. The historical
+phone/C67 plan remains for the present independent AICI paired-ABI interface.
+This preserves both ABIs but does not equate C67 physical results with TAB_P10.
+The read-only `select-tablet-apk.sh` checks a supplied Cat Food observation,
+plan and matching native source-binding record and reports ELIGIBLE_ONLY. Its
+fixtures are synthetic, and it neither signs nor installs an APK.
+
+The successor source head needs fresh hosted core, HTTP/2, Idriç, signed native
+and repeat-packaging checks; previous successful runs qualify only the former
+source head. TAB_P10 inventory, actual APK install/launch, signed update
+retention, IME/rotation, live provider, trust, performance, and independent
+policy/producer admission remain NOT_RUN or BLOCKED. No release promotion.
