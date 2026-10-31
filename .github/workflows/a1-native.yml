@@ -119,11 +119,11 @@ jobs:
           test "$observed" = "$ANDROID_EXPECTED_CERT_SHA256"
           "$sdk/aapt2" dump badging fastchat.apk | grep -F "package: name='$ANDROID_PACKAGE_ID'"
           unzip -Z1 fastchat.apk | grep -Fx "lib/${{ matrix.abi }}/libfastchat.so"
-          if unzip -Z1 fastchat.apk | grep -Eq '(^|/)classes[0-9]*\\.dex$'; then
+          if unzip -Z1 fastchat.apk | grep -Eq '(^|/)classes[0-9]*\.dex$'; then
             echo 'Unexpected application DEX' >&2
             exit 1
           fi
-          grep -Fx "$(printf 'source_commit\\t%s' '${{ github.event.pull_request.head.sha || github.sha }}')" native/source-binding.tsv
+          grep -Fx "$(printf 'source_commit\t%s' '${{ github.event.pull_request.head.sha || github.sha }}')" native/source-binding.tsv
       - name: Preserve stripped artifact and producer receipts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
