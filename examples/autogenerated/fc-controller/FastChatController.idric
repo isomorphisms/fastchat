@@ -1,0 +1,170 @@
+module FastChatController
+
+import Data.Text
+
+public export
+choice allocation one_of
+  star
+  sun
+  earth
+  moon
+
+public export
+choice job_identity one_of
+  job Number
+
+public export
+choice payload_digest one_of
+  digest Text
+
+public export
+choice work_context one_of
+  work_at Text Text Text Text
+
+-- Repository, source revision, history reference, acceptance conditions.
+-- Complete text and its externally verified digest remain bound together.
+public export
+choice job_proposal one_of
+  propose job_identity job_identity allocation work_context Text payload_digest
+
+public export
+choice controller_state one_of
+  drafted job_proposal
+  awaiting_visible job_proposal
+  delivered job_proposal
+  awaiting_dispatch job_proposal
+  dispatched job_proposal Text
+  independently_accepted job_proposal Text
+
+public export
+choice dispatch_authority one_of
+  user_authorized
+  authority_missing
+
+public export
+choice fp_command one_of
+  submit_job job_proposal
+
+same_job : job_identity → job_identity → Bool
+same_job (job left) (job right) = left ≟ right
+
+same_digest : payload_digest → payload_digest → Bool
+same_digest (digest left) (digest right) = left ≟ right
+
+matches_proposal : job_identity → payload_digest → job_proposal → Bool
+matches_proposal key payload (propose expected _ _ _ _ wanted) =
+  same_job key expected && same_digest payload wanted
+
+public export
+request_visible_delivery : controller_state → controller_state
+request_visible_delivery (drafted proposal) = awaiting_visible proposal
+request_visible_delivery state = state
+
+public export
+observe_visible_delivery : job_identity → payload_digest → controller_state → controller_state
+observe_visible_delivery key payload state@(awaiting_visible proposal) =
+  if matches_proposal key payload proposal then delivered proposal else state
+observe_visible_delivery _ _ state = state
+
+public export
+request_dispatch : dispatch_authority → controller_state → (controller_state, Maybe fp_command)
+request_dispatch user_authorized (delivered proposal) =
+  (awaiting_dispatch proposal, Just (submit_job proposal))
+request_dispatch _ state = (state, Nothing)
+
+-- Only the trusted FP adapter may supply these observed receipts. This pure
+-- model does not validate a signature, capture bytes, or perform dispatch.
+public export
+observe_dispatch : job_identity → payload_digest → Text → controller_state → controller_state
+observe_dispatch key payload receipt state@(awaiting_dispatch proposal) =
+  if matches_proposal key payload proposal && not (receipt ≟ "")
+    then dispatched proposal receipt else state
+observe_dispatch _ _ _ state = state
+
+public export
+observe_acceptance : job_identity → payload_digest → Text → controller_state → controller_state
+observe_acceptance key payload receipt state@(dispatched proposal expected) =
+  if matches_proposal key payload proposal && receipt ≟ expected
+    then independently_accepted proposal receipt else state
+observe_acceptance _ _ _ state = state
+
+public export
+choice watched_source one_of
+  source Text
+
+public export
+choice watcher_state one_of
+  watching watched_source Bool Number (Maybe Number)
+
+public export
+observe_source_event : watched_source → Number → watcher_state → (watcher_state, Maybe Number)
+observe_source_event (source actual) event state@(watching wanted@(source expected) enabled cursor pending) =
+  if not enabled || not (actual ≟ expected) || event <= cursor
+    then (state, Nothing)
+    else case pending of
+      Just _ ⇒ (state, Nothing)
+      Nothing ⇒ (watching wanted enabled cursor (Just event), Just event)
+
+public export
+acknowledge_proposal : Number → watcher_state → watcher_state
+acknowledge_proposal event state@(watching wanted enabled cursor (Just pending)) =
+  if event ≟ pending then watching wanted enabled event Nothing else state
+acknowledge_proposal _ state = state
+
+no_submission : (controller_state, Maybe fp_command) → Bool
+no_submission (_, Nothing) = True
+no_submission _ = False
+
+is_dispatched : controller_state → Bool
+is_dispatched (dispatched _ _) = True
+is_dispatched _ = False
+
+is_accepted : controller_state → Bool
+is_accepted (independently_accepted _ _) = True
+is_accepted _ = False
+
+public export
+controller_fixture_tests : Bool
+controller_fixture_tests =
+  let payload = digest "fixture-digest-not-a-cryptographic-receipt"
+      proposal = propose (job 2) (job 1) sun
+        (work_at "isomorphisms/fastchat" "source-pin" "history-pin" "exact acceptance")
+        "Complete visible job text\n" payload
+      initial = drafted proposal
+      waiting = request_visible_delivery initial
+      visible = observe_visible_delivery (job 2) payload waiting
+      (requested, effect) = request_dispatch user_authorized visible
+      acknowledged = observe_dispatch (job 2) payload "fp-receipt" requested
+      accepted = observe_acceptance (job 2) payload "fp-receipt" acknowledged
+      watcher = watching (source "authorized-source") True 0 Nothing
+      (pending, proposed) = observe_source_event (source "authorized-source") 1 watcher
+      (restored, duplicate) = observe_source_event (source "authorized-source") 1 pending
+      advanced = acknowledge_proposal 1 restored
+      (_, stale) = observe_source_event (source "authorized-source") 1 advanced
+      (_, unrelated) = observe_source_event (source "another-source") 2 advanced
+      (_, disabled) = observe_source_event (source "authorized-source") 2
+        (watching (source "authorized-source") False 1 Nothing)
+  in no_submission (request_dispatch user_authorized initial) &&
+     no_submission (request_dispatch authority_missing visible) &&
+     no_submission (request_dispatch user_authorized
+       (observe_visible_delivery (job 99) payload waiting)) &&
+     no_submission (request_dispatch user_authorized
+       (observe_visible_delivery (job 2) (digest "changed") waiting)) &&
+     not (is_dispatched requested) &&
+     not (is_dispatched (observe_dispatch (job 2) payload "" requested)) &&
+     is_dispatched acknowledged &&
+     not (is_accepted (observe_acceptance (job 2) payload "wrong-receipt" acknowledged)) &&
+     not (is_accepted (observe_acceptance (job 2) payload "fp-receipt" requested)) &&
+     is_accepted accepted &&
+     no_submission (request_dispatch user_authorized acknowledged) &&
+     (case effect of Just _ ⇒ True; Nothing ⇒ False) &&
+     (case proposed of Just 1 ⇒ True; _ ⇒ False) &&
+     (case duplicate of Nothing ⇒ True; _ ⇒ False) &&
+     (case stale of Nothing ⇒ True; _ ⇒ False) &&
+     (case unrelated of Nothing ⇒ True; _ ⇒ False) &&
+     (case disabled of Nothing ⇒ True; _ ⇒ False)
+
+main : IO ()
+main = putStrLn (if controller_fixture_tests
+  then "PASS typed controller and watcher semantic fixtures"
+  else "FAIL typed controller and watcher semantic fixtures")

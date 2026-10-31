@@ -3,6 +3,7 @@
 #include "fixture_transport.h"
 #include "render_policy.h"
 #include "provider.h"
+#include "settings.h"
 #include <assert.h>
 #include <dirent.h>
 #include <errno.h>
@@ -92,6 +93,8 @@ static void prefix_visibility_case(void) {
     assert(length == (renderer_follows_prefixes() ? FC_VIEW_BYTES : 0));
     assert(render_stored_window(&conversation, FC_BATCH_BYTES - 1, view, sizeof(view), &length) == FC_OK);
     assert(length == 0);
+    int next_page;
+    assert(response_page_follows(&conversation, NULL, FC_BATCH_BYTES - 1, &next_page) == FC_OK && !next_page);
     static const unsigned char continuation[] ← { 0x82, 0xac };
     feed_bytes(&conversation, continuation, sizeof(continuation));
     /* Written UTF-8 continuation is ineligible until the next durable prefix. */
@@ -100,9 +103,18 @@ static void prefix_visibility_case(void) {
     assert(commit_stored_prefix(&conversation) == FC_OK);
     assert(render_stored_window(&conversation, FC_BATCH_BYTES - 1, view, sizeof(view), &length) == FC_OK);
     assert(length == (renderer_follows_prefixes() ? 3u : 0u));
+    assert(response_page_follows(&conversation, NULL, FC_BATCH_BYTES - 1, &next_page) == FC_OK);
+    assert(next_page == renderer_follows_prefixes());
     finish_conversation(&conversation);
     assert(render_stored_window(&conversation, FC_BATCH_BYTES - 1, view, sizeof(view), &length) == FC_OK);
     assert(length == 3 && memcmp(view, "\xe2\x82\xac", 3) == 0);
+    uint64_t end ← FC_BATCH_BYTES + sizeof(continuation);
+    assert(response_page_follows(&conversation, NULL, end, &next_page) == FC_OK && !next_page);
+    HistoryTurn previous;
+    assert(history_turn(&conversation, conversation.request, &previous) == FC_OK);
+    assert(submit_text(&conversation, "new", 3) == FC_OK);
+    assert(response_page_follows(&conversation, &previous, FC_BATCH_BYTES - 1, &next_page) == FC_OK && next_page);
+    assert(response_page_follows(&conversation, &previous, end, &next_page) == FC_OK && !next_page);
     conversation_close(&conversation);
     remove_directory(path);
     puts("PASS branch renderer policy, committed prefixes, UTF-8 visibility eligibility");
@@ -458,6 +470,161 @@ static void production_provider_cases(void) {
     assert(provider_request_body_for(PROVIDER_RESPONSES, "fixture-model", "Idriç\n\"\\", 9, body, required, &length) == FC_OK && !strcmp(body, exact));
     assert(provider_request_body_for((ProviderRequestFormat)99, "fixture", "x", 1, body, sizeof(body), &length) == FC_REJECTED);
     puts("PASS production-shaped SSE/JSON cuts, UTF-8/fences, ordinary text, explicit failure, malformed/truncated data, durable tool events and bounded backpressure");
+}
+
+static void provider_identity_cases(void) {
+    Conversation conversation;
+    char path[64];
+    fresh_conversation(&conversation, path);
+    finish_conversation(&conversation);
+    AttemptProvider provider ← { PROVIDER_CHAT, "https://model.example:443", "/v1/chat/completions", "model-λ" };
+    AttemptProvider invalid ← provider;
+    strcpy(invalid.origin, "https://secret@model.example");
+    uint64_t sequence ← conversation.sequence;
+    assert(submit_text_to(&conversation, "next", 4, &invalid) == FC_REJECTED);
+    assert(conversation.sequence == sequence && conversation.phase == COMPLETED);
+    invalid ← provider; strcpy(invalid.path, "/v1?key=secret");
+    assert(!attempt_provider_valid(&invalid));
+    invalid ← provider; memset(invalid.model, 'x', sizeof(invalid.model));
+    assert(!attempt_provider_valid(&invalid));
+    assert(submit_text_to(&conversation, "next", 4, &provider) == FC_OK);
+    assert(!strcmp(conversation.provider.model, "model-λ"));
+    uint64_t request ← conversation.request, attempt ← conversation.attempt;
+    /* A restart before network effects preserves the bound identity and marks
+       the unknown outcome; it never sends or substitutes the next profile. */
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, path) == FC_OK);
+    assert(conversation.phase == UNCERTAIN && conversation.request == request && conversation.attempt == attempt);
+    assert(conversation.provider.backend == PROVIDER_CHAT && !strcmp(conversation.provider.model, "model-λ"));
+    HistoryTurn turn;
+    assert(history_turn(&conversation, 1, &turn) == FC_OK && turn.provider.backend == PROVIDER_UNRECORDED);
+    assert(history_turn(&conversation, request, &turn) == FC_OK && !strcmp(turn.provider.origin, provider.origin));
+    provider.backend ← PROVIDER_RESPONSE;
+    strcpy(provider.model, "new-model"); strcpy(provider.path, "/v1/responses");
+    assert(retry_request_to(&conversation, &provider) == FC_OK);
+    assert(conversation.attempt == attempt + 1 && conversation.provider.backend == PROVIDER_RESPONSE);
+    assert(history_turn(&conversation, request, &turn) == FC_OK && !strcmp(turn.provider.model, "new-model"));
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, START) == FC_OK);
+    finish_conversation(&conversation);
+    AttemptProvider fixture ← { .backend ← PROVIDER_FIXTURE };
+    assert(submit_text_to(&conversation, "test", 4, &fixture) == FC_OK);
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, TRANSPORT_LOSS) == FC_OK);
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, path) == FC_OK);
+    assert(conversation.provider.backend == PROVIDER_FIXTURE);
+    assert(history_turn(&conversation, request, &turn) == FC_OK && turn.provider.backend == PROVIDER_RESPONSE);
+    assert(!strcmp(turn.provider.path, "/v1/responses") && !strcmp(turn.provider.model, "new-model"));
+    conversation_close(&conversation);
+    remove_directory(path);
+    fresh_conversation(&conversation, path);
+    finish_conversation(&conversation);
+    /* The user decision survives a torn identity record, but neither its
+       uncommitted provider nor a fresh transport attempt is invented. */
+    attempt ← conversation.attempt;
+    conversation.write_budget ← 64 + 4 + 64 + 3;
+    assert(submit_text_to(&conversation, "next", 4, &provider) == FC_STORAGE_ERROR);
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, path) == FC_OK);
+    assert(conversation.phase == UNCERTAIN && conversation.attempt == attempt);
+    assert(conversation.provider.backend == PROVIDER_UNRECORDED);
+    assert(!strcmp(conversation.prompt, "next"));
+    conversation_close(&conversation);
+    remove_directory(path);
+    fresh_conversation(&conversation, path);
+    finish_conversation(&conversation);
+    uint64_t identity_offset ← conversation.journal_end + 64 + 4;
+    assert(submit_text_to(&conversation, "next", 4, &provider) == FC_OK);
+    unsigned char original[64 + FC_PROMPT_BYTES], changed[64 + FC_PROMPT_BYTES];
+    assert(pread(conversation.journal, original, 64, (off_t)identity_offset) == 64);
+    size_t record_length ← (size_t)record_number(original + 4, 4);
+    assert(record_length <= sizeof(original));
+    assert(pread(conversation.journal, original, record_length, (off_t)identity_offset) == (ssize_t)record_length);
+    char journal_path[128];
+    snprintf(journal_path, sizeof(journal_path), "%s/history.events", path);
+    conversation_close(&conversation);
+    int journal ← open(journal_path, O_RDWR);
+    assert(journal >= 0);
+    for (unsigned mutant ← 0; mutant < 4; mutant++) {
+        memcpy(changed, original, record_length);
+        if (mutant == 0) changed[64] ← 2; /* Unknown payload version. */
+        if (mutant == 1) changed[65] ← PROVIDER_UNRECORDED; /* Fake known payload. */
+        if (mutant == 2) changed[72] ← 0; /* Embedded NUL in a routing field. */
+        if (mutant == 3) set_record_number(changed + 66, 512, 2); /* Field overflow. */
+        memset(changed + 60, 0, 4);
+        set_record_number(changed + 60, checksum_bytes(0xffffffffu, changed, record_length), 4);
+        assert(pwrite(journal, changed, record_length, (off_t)identity_offset) == (ssize_t)record_length);
+        assert(fsync(journal) == 0);
+        assert(conversation_open(&conversation, path) == FC_CORRUPT);
+        conversation_close(&conversation);
+    }
+    close(journal);
+    remove_directory(path);
+    puts("PASS durable provider/model/schema per attempt, retry/restart identity, historical unknowns and credential-bearing route rejection");
+}
+static void provider_context_cases(void) {
+    Conversation conversation;
+    char path[64];
+    fresh_conversation(&conversation, path);
+    static const char answer[] ← "λ + 𝓕: \"first\"\n";
+    feed_bytes(&conversation, (const unsigned char *)answer, sizeof(answer)-1);
+    finish_conversation(&conversation);
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, path) == FC_OK);
+    assert(submit_text(&conversation, "follow up", 9) == FC_OK);
+    char body[8192], before[8192];
+    size_t length;
+    const char *messages ← "[{\"role\":\"user\",\"content\":\"hello\"},{\"role\":\"assistant\",\"content\":\"λ + 𝓕: \\\"first\\\"\\u000a\"},{\"role\":\"user\",\"content\":\"follow up\"}]}";
+    for (int format ← PROVIDER_CHAT_COMPLETIONS; format <= PROVIDER_RESPONSES; format++) {
+        assert(provider_conversation_body_for((ProviderRequestFormat)format, "fixture-model", &conversation, body, sizeof(body), &length) == FC_OK);
+        const char *start ← strchr(body, '[');
+        assert(start && !strcmp(start, messages));
+        assert(strstr(body, format == PROVIDER_RESPONSES ? "\"input\":[" : "\"messages\":["));
+        assert(length == strlen(body));
+        memcpy(before, body, length+1);
+        size_t needed ← length+1;
+        assert(provider_conversation_body_for((ProviderRequestFormat)format, "fixture-model", &conversation, body, needed-1, &length) == FC_REJECTED);
+        assert(length == 0 && body[0] == 0);
+        assert(provider_conversation_body_for((ProviderRequestFormat)format, "fixture-model", &conversation, body, needed, &length) == FC_OK);
+        assert(!strcmp(before, body));
+    }
+    /* Cancellation/partial output remains explicit in subsequent context. */
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, START) == FC_OK);
+    feed_bytes(&conversation, (const unsigned char *)"partial", 7);
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, CANCEL_REQUEST) == FC_OK);
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, CANCEL_ACK) == FC_OK);
+    assert(submit_text(&conversation, "after cancel", 12) == FC_OK);
+    assert(provider_conversation_body_for(PROVIDER_CHAT_COMPLETIONS, "fixture-model", &conversation, body, sizeof(body), &length) == FC_OK);
+    assert(strstr(body, "FastChat history: request 2 ended cancelled"));
+    assert(strstr(body, "committed partial reply"));
+    assert(strstr(body, "\"content\":\"partial\""));
+    conversation_close(&conversation);
+    remove_directory(path);
+    /* Real durable history larger than the wire budget refuses before POST. */
+    fresh_conversation(&conversation, path);
+    unsigned char large[FC_WRITE_BYTES];
+    memset(large, 'x', sizeof(large));
+    feed_bytes(&conversation, large, sizeof(large));
+    feed_bytes(&conversation, large, sizeof(large));
+    finish_conversation(&conversation);
+    assert(submit_text(&conversation, "next", 4) == FC_OK);
+    uint64_t sequence ← conversation.sequence;
+    assert(provider_conversation_body_for(PROVIDER_CHAT_COMPLETIONS, "fixture-model", &conversation, body, sizeof(body), &length) == FC_REJECTED);
+    assert(length == 0 && body[0] == 0 && conversation.sequence == sequence);
+    conversation_close(&conversation);
+    remove_directory(path);
+    fresh_conversation(&conversation, path);
+    static const unsigned char incomplete[] ← { 'o', 'k', ' ', 0xe2 };
+    feed_bytes(&conversation, incomplete, sizeof(incomplete));
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, CANCEL_REQUEST) == FC_OK);
+    assert(admit_event(&conversation, conversation.request, conversation.attempt, CANCEL_ACK) == FC_OK);
+    assert(submit_text(&conversation, "continue", 8) == FC_OK);
+    assert(provider_conversation_body_for(PROVIDER_CHAT_COMPLETIONS, "fixture-model", &conversation, body, sizeof(body), &length) == FC_OK);
+    assert(strstr(body, "\"content\":\"ok \""));
+    int valid;
+    assert(complete_utf8_prefix((const unsigned char *)body, length, &valid) == length && valid);
+    conversation_close(&conversation);
+    remove_directory(path);
+    puts("PASS durable two-turn context, both provider schemas, Unicode/escapes, exact bounds, explicit cancellation/partial history and overbudget refusal");
 }
 
 static void cancellation_cases(void) {
@@ -1095,6 +1262,100 @@ static void giant_framed_offer_case(void) {
     remove_directory(path);
 }
 
+static int same_settings(const ProviderSettings *left, const ProviderSettings *right) {
+    return left->provider.backend == right->provider.backend
+        && !strcmp(left->provider.origin, right->provider.origin)
+        && !strcmp(left->provider.path, right->provider.path)
+        && !strcmp(left->provider.model, right->provider.model)
+        && !strcmp(left->ca, right->ca) && !strcmp(left->authorization, right->authorization);
+}
+static void settings_cases(void) {
+    char directory[] ← "/tmp/fastchat-settings-XXXXXX";
+    assert(mkdtemp(directory));
+    ProviderSettings original ← { .provider ← {PROVIDER_CHAT, "https://model.example", "/v1/chat/completions", "example-model"},
+        .ca ← "system", .authorization ← "Authorization: Bearer fixture-only-key" };
+    ProviderSettings loaded;
+    int present;
+    assert(settings_load(directory, &loaded, &present) == FC_OK && !present);
+    assert(settings_save(directory, &original) == FC_OK);
+    assert(settings_load(directory, &loaded, &present) == FC_OK && present);
+    assert(same_settings(&original, &loaded));
+    char filename[256];
+    snprintf(filename, sizeof(filename), "%s/provider.settings.tsv", directory);
+    struct stat status;
+    assert(stat(filename, &status) == 0 && (status.st_mode & 0777) == 0600);
+    /* Rejected settings must leave the last complete configuration intact. */
+    ProviderSettings rejected ← original;
+    strcpy(rejected.authorization, "Authorization: Bearer key\r\nInjected: yes");
+    assert(settings_save(directory, &rejected) == FC_REJECTED);
+    rejected ← original; strcpy(rejected.provider.origin, "https://user:secret@model.example");
+    assert(settings_save(directory, &rejected) == FC_REJECTED);
+    rejected ← original; strcpy(rejected.provider.model, "unsupported model");
+    assert(settings_save(directory, &rejected) == FC_REJECTED);
+    assert(settings_load(directory, &loaded, &present) == FC_OK && same_settings(&original, &loaded));
+    /* Interrupted replacement is never read as the committed settings. */
+    assert(private_file_write(directory, ".provider.settings.tsv.pending", "partial", 7) == FC_OK);
+    assert(settings_load(directory, &loaded, &present) == FC_OK && same_settings(&original, &loaded));
+    snprintf(filename, sizeof(filename), "%s/.provider.settings.tsv.pending", directory);
+    assert(unlink(filename) == 0);
+    original.provider.backend ← PROVIDER_RESPONSE;
+    strcpy(original.provider.path, "/v1/responses");
+    strcpy(original.provider.model, "second-model");
+    original.authorization[0] ← 0;
+    assert(settings_save(directory, &original) == FC_OK);
+    assert(settings_load(directory, &loaded, &present) == FC_OK);
+    assert(loaded.provider.backend == PROVIDER_RESPONSE && !strcmp(loaded.provider.model, "second-model") && !loaded.authorization[0]);
+    char serialized[6144], corrupted[6144];
+    size_t serialized_length;
+    assert(private_file_read(directory, "provider.settings.tsv", serialized, sizeof(serialized)-1, &serialized_length) == FC_OK);
+    serialized[serialized_length] ← 0;
+    const char *extra_fields[] ← {"version\t1\n", "unknown\tvalue\n"};
+    for (unsigned index ← 0; index < sizeof(extra_fields)÷sizeof(extra_fields[0]); index++) {
+        int count ← snprintf(corrupted, sizeof(corrupted), "%s%s", serialized, extra_fields[index]);
+        assert(count > 0 && (size_t)count < sizeof(corrupted));
+        assert(private_file_write(directory, "provider.settings.tsv", corrupted, (size_t)count) == FC_OK);
+        assert(settings_load(directory, &loaded, &present) == FC_CORRUPT);
+    }
+    /* These are complete otherwise-valid records; failure cannot be explained
+       merely by a missing required field. */
+    memcpy(corrupted, serialized, serialized_length);
+    corrupted[serialized_length] ← 0;
+    char *trust ← strstr(corrupted, "ca\tsystem\n");
+    assert(trust); trust[3] ← (char)0xff;
+    assert(private_file_write(directory, "provider.settings.tsv", corrupted, serialized_length) == FC_OK);
+    assert(settings_load(directory, &loaded, &present) == FC_CORRUPT);
+    const char *malformed[] ← {"", "version\t1", "version\t1\nversion\t1\n", "unknown\tvalue\n"};
+    for (unsigned index ← 0; index < sizeof(malformed)÷sizeof(malformed[0]); index++) {
+        assert(private_file_write(directory, "provider.settings.tsv", malformed[index], strlen(malformed[index])) == FC_OK);
+        assert(settings_load(directory, &loaded, &present) == FC_CORRUPT && present);
+        assert(!loaded.authorization[0] && loaded.provider.backend == PROVIDER_UNRECORDED);
+    }
+    assert(private_file_write(directory, "provider.settings.tsv", "version\t1\n\0hidden\n", 18) == FC_OK);
+    assert(settings_load(directory, &loaded, &present) == FC_CORRUPT);
+    assert(settings_save(directory, &original) == FC_OK);
+    snprintf(filename, sizeof(filename), "%s/provider.settings.tsv", directory);
+    assert(chmod(filename, 0644) == 0);
+    assert(settings_load(directory, &loaded, &present) == FC_CORRUPT);
+    assert(chmod(filename, 0600) == 0);
+    /* Exact UTF-16 bytes survive restart, including a supplementary character.
+       Empty checkpoints clear a prior draft; overlong reads fail closed. */
+    uint16_t draft[] ← {0x03bb, 0x000a, 0xd83d, 0xde00};
+    unsigned char bytes[32];
+    size_t length;
+    assert(private_file_write(directory, "composer.draft", draft, sizeof(draft)) == FC_OK);
+    assert(private_file_read(directory, "composer.draft", bytes, sizeof(bytes), &length) == FC_OK
+        && length == sizeof(draft) && !memcmp(bytes, draft, length));
+    assert(private_file_read(directory, "composer.draft", bytes, 1, &length) == FC_CORRUPT && !length);
+    assert(private_file_write(directory, "composer.draft", NULL, 0) == FC_OK);
+    assert(private_file_read(directory, "composer.draft", bytes, sizeof(bytes), &length) == FC_OK && !length);
+    snprintf(filename, sizeof(filename), "%s/.composer.draft.pending", directory);
+    assert(symlink("provider.settings.tsv", filename) == 0);
+    assert(private_file_write(directory, "composer.draft", draft, sizeof(draft)) == FC_STORAGE_ERROR);
+    assert(settings_load(directory, &loaded, &present) == FC_OK && !strcmp(loaded.provider.model, "second-model"));
+    remove_directory(directory);
+    puts("PASS private provider setup, rejected credential injection, atomic replacement, malformed settings and bounded durable drafts");
+}
+
 int main(int argc, char **argv) {
     if (argc == 2 && strcmp(argv[1], "--arena-reuse") == 0) { arena_reuse_case(); return 0; }
     if (argc == 3 && strcmp(argv[1], "replay") == 0) return fresh_process_replay(argv[2]);
@@ -1109,6 +1370,9 @@ int main(int argc, char **argv) {
     history_case();
     pending_decision_case();
     production_provider_cases();
+    provider_context_cases();
+    provider_identity_cases();
+    settings_cases();
     giant_framed_offer_case();
     prefix_visibility_case();
     response_cases();

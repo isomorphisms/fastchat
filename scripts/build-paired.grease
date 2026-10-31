@@ -1,0 +1,64 @@
+#!/usr/bin/env grease
+# Build-host procedure for the existing registered FP Android producer.
+set -eu -o pipefail
+if (len(ARGV) !== 1) { echo 'usage: build-paired.grease NEW_OUTPUT_DIRECTORY'; exit 2 }
+var directory = $(dirname "$0")
+var repository = $(realpath "$directory/..")
+var output = ARGV[0]
+var runtime = ENV.GREASE_BINARY
+var catfood = ENV.CATFOOD_CHECKOUT
+var packaging = ENV.ANDROID_NDK_REPO
+var ndk = ENV.FC_NDK_ROOT
+var lua = ENV.FC_ICKY_LUA_SOURCE
+var sources = ENV.FC_HTTP2_SOURCES
+var cmake = ENV.FC_CMAKE
+var arm_driver = ENV.FC_ICK_ARM_DRIVER
+var arm_support = ENV.FC_ICK_ARM_SUPPORT
+var arm64_driver = ENV.FC_ICK_ARM64_DRIVER
+var arm64_support = ENV.FC_ICK_ARM64_SUPPORT
+var revision = $(git -C "$repository" rev-parse HEAD)
+test "$revision" = "$FP_ANDROID_SOURCE_SHA"
+test $(uname -s) = Linux
+test $(uname -m) = x86_64
+test "$runtime" = $(realpath "$runtime")
+printf '%s  %s\n' 7e31cd05b7a9d8fb2a4a9e003a7f3fcb0159138506d17f0fb28da8cbe22aa85c "$runtime" | sha256sum -c -
+test -x "$arm_driver"
+test -x "$arm64_driver"
+test -x "$cmake"
+test -f "$catfood/catfood"
+test -f "$packaging/apk/build-nativeactivity-apk.sh"
+test ! -e "$output"
+mkdir -p "$output"
+# The approved Cat Food label and target policy must admit both packages.
+sh "$catfood/catfood" plan-android-build "$repository/ci/android-application.tsv" phone "$revision" > "$output/android-plan.tsv"
+rg -q '^phone\tMIRO_A1\tarmeabi-v7a\trequired\tnot_run$' "$output/android-plan.tsv"
+rg -q '^c67\tMIRO_C67\tarm64-v8a\trequired\tnot_run$' "$output/android-plan.tsv"
+setglobal ENV.ANDROID_PACKAGE_ID = 'org.isomorphisms.fastchat.diskstreaming.arena'
+setglobal ENV.ANDROID_VERSION_CODE = '6'
+setglobal ENV.ANDROID_VERSION_NAME = '0.6-candidate'
+setglobal ENV.ANDROID_MIN_SDK = '26'
+setglobal ENV.ANDROID_TARGET_SDK = '34'
+setglobal ENV.ANDROID_KEYSTORE = repository ++ '/android/signing/fastchat-comparison-dev.jks'
+setglobal ENV.ANDROID_KEYSTORE_TYPE = 'JKS'
+setglobal ENV.ANDROID_KEY_ALIAS = 'fastchat-material3-dev'
+setglobal ENV.ANDROID_STORE_PASSWORD = 'fastchat-development'
+setglobal ENV.ANDROID_KEY_PASSWORD = 'fastchat-development'
+setglobal ENV.ANDROID_EXPECTED_CERT_SHA256 = 'aa9151e3922fa4795987c3655bc7aa4712620f1d94c24a2075acd7b29d8ac86e'
+setglobal ENV.ANDROID_SOURCE_COMMIT = revision
+setglobal ENV.FC_GREASE = runtime
+for abi in (['armeabi-v7a', 'arm64-v8a']) {
+  var driver = arm_driver
+  var support = arm_support
+  var target = 'a1'
+  if (abi === 'arm64-v8a') {
+    setvar driver = arm64_driver
+    setvar support = arm64_support
+    setvar target = 'c67'
+  }
+  var stage = output ++ '/' ++ abi
+  mkdir -p "$stage"
+  "$runtime" "$repository/scripts/build-http2-libraries.grease" "$sources" "$stage/http2" "$ndk" "$target" "$cmake" "$driver" "$support"
+  "$runtime" "$repository/scripts/build-native.grease" "$driver" "$support" "$ndk" "$lua" "$stage/native" "$stage/http2/prefix" "$abi"
+  "$runtime" "$repository/scripts/qualify-reproducibility.grease" "$driver" "$support" "$ndk" "$lua" "$stage/http2/prefix" "$packaging" "$stage/native/libfastchat.so" "$stage/repeated" "$output/fastchat-$abi.apk" "$abi"
+}
+echo 'PASS paired FastChat test APK production; physical and independent admission remain separate'

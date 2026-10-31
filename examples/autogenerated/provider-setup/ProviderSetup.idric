@@ -1,0 +1,25 @@
+module ProviderSetup
+
+import Data.Text
+
+public export
+choice provider_format one_of
+  chat_completions
+  responses
+
+public export
+choice attempt_identity one_of
+  public_route provider_format Text Text Text
+
+-- This value never enters the durable conversation event vocabulary.
+export
+choice private_authorization one_of
+  private_header Text
+
+export
+choice provider_settings one_of
+  configured_provider attempt_identity private_authorization
+
+public export
+public_identity : provider_settings -> attempt_identity
+public_identity (configured_provider route credential) = route
