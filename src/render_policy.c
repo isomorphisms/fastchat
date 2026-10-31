@@ -162,3 +162,13 @@ Result render_stored_window(Conversation *conversation, uint64_t offset,
     if (follows < 0) { *length ← 0; return FC_POLICY_ERROR; }
     return read_response_window(conversation, offset, follows, bytes, capacity, length);
 }
+Result response_page_follows(Conversation *conversation, const HistoryTurn *history,
+                             uint64_t displayed_end, int *available) {
+    unsigned char probe[4]; /* At most one UTF-8 scalar is needed to enable Next. */
+    size_t length ← 0;
+    Result result ← history
+        ? read_history_window(conversation, history, displayed_end, probe, sizeof(probe), &length)
+        : render_stored_window(conversation, displayed_end, probe, sizeof(probe), &length);
+    *available ← result == FC_OK && length != 0;
+    return result;
+}

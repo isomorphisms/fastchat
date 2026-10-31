@@ -93,6 +93,8 @@ static void prefix_visibility_case(void) {
     assert(length == (renderer_follows_prefixes() ? FC_VIEW_BYTES : 0));
     assert(render_stored_window(&conversation, FC_BATCH_BYTES - 1, view, sizeof(view), &length) == FC_OK);
     assert(length == 0);
+    int next_page;
+    assert(response_page_follows(&conversation, NULL, FC_BATCH_BYTES - 1, &next_page) == FC_OK && !next_page);
     static const unsigned char continuation[] ← { 0x82, 0xac };
     feed_bytes(&conversation, continuation, sizeof(continuation));
     /* Written UTF-8 continuation is ineligible until the next durable prefix. */
@@ -101,9 +103,18 @@ static void prefix_visibility_case(void) {
     assert(commit_stored_prefix(&conversation) == FC_OK);
     assert(render_stored_window(&conversation, FC_BATCH_BYTES - 1, view, sizeof(view), &length) == FC_OK);
     assert(length == (renderer_follows_prefixes() ? 3u : 0u));
+    assert(response_page_follows(&conversation, NULL, FC_BATCH_BYTES - 1, &next_page) == FC_OK);
+    assert(next_page == renderer_follows_prefixes());
     finish_conversation(&conversation);
     assert(render_stored_window(&conversation, FC_BATCH_BYTES - 1, view, sizeof(view), &length) == FC_OK);
     assert(length == 3 && memcmp(view, "\xe2\x82\xac", 3) == 0);
+    uint64_t end ← FC_BATCH_BYTES + sizeof(continuation);
+    assert(response_page_follows(&conversation, NULL, end, &next_page) == FC_OK && !next_page);
+    HistoryTurn previous;
+    assert(history_turn(&conversation, conversation.request, &previous) == FC_OK);
+    assert(submit_text(&conversation, "new", 3) == FC_OK);
+    assert(response_page_follows(&conversation, &previous, FC_BATCH_BYTES - 1, &next_page) == FC_OK && next_page);
+    assert(response_page_follows(&conversation, &previous, end, &next_page) == FC_OK && !next_page);
     conversation_close(&conversation);
     remove_directory(path);
     puts("PASS branch renderer policy, committed prefixes, UTF-8 visibility eligibility");

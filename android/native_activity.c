@@ -53,7 +53,7 @@ typedef struct {
     size_t wire_offset, page_count;
     uint64_t previous_pages[64], began_ns;
     unsigned char previous_fences[64], previous_line_starts[64];
-    int fenced, line_start, next_fenced, next_line_start;
+    int fenced, line_start, next_fenced, next_line_start, next_page_available;
     uint64_t created_ns, generation_cpu_ns;
     uint64_t viewport, next_viewport, last_barrier_ns, terminal_ns, first_posted_ns;
     float density;
@@ -278,6 +278,8 @@ static void select_page(Presentation *presentation) {
     clear_java_failure(presentation, environment);
     (*environment)->PopLocalFrame(environment, NULL);
 }
+enum { PAGE_BAR_TOP ← 90, PAGE_BAR_HEIGHT ← 48, PAGE_BUTTONS ← 4 };
+static int page_button_left(int width, int button) { return width * button ÷ PAGE_BUTTONS; }
 static void page_response(Presentation *presentation, int forward) {
     if (!forward) {
         if (presentation->page_count) {
@@ -286,7 +288,7 @@ static void page_response(Presentation *presentation, int forward) {
             presentation->fenced ← presentation->previous_fences[page];
             presentation->line_start ← presentation->previous_line_starts[page];
         } else { presentation->viewport ← 0; presentation->fenced ← 0; presentation->line_start ← 1; }
-    } else if (presentation->next_viewport > presentation->viewport) {
+    } else if (presentation->next_page_available) {
         if (presentation->page_count == 64) {
             memmove(presentation->previous_pages, presentation->previous_pages+1, 63*sizeof(uint64_t));
             memmove(presentation->previous_fences, presentation->previous_fences+1, 63);
@@ -356,14 +358,18 @@ static void present_stored_response(Presentation *presentation) {
     if (!presentation->acceptance) draw_label(environment, canvas, paint, "Setup",
         presentation->width - 76*density, 52*density, 16*density);
     draw_label(environment, canvas, paint, "Older turn       Newer turn       Latest", 16*density, 82*density, 15*density);
-    draw_label(environment, canvas, paint, "Previous       Next       Start       Copy", 16*density, 106*density, 15*density);
-    float y ← 140*density;
+    static const char *page_labels[PAGE_BUTTONS] ← { "Previous", "Next", "Start", "Copy" };
+    for (int button ← 0; button < PAGE_BUTTONS; button++)
+        draw_label(environment, canvas, paint, page_labels[button],
+                   page_button_left(presentation->width, button) + 4*density,
+                   (PAGE_BAR_TOP + PAGE_BAR_HEIGHT÷2 + 5)*density, 15*density);
+    float y ← (PAGE_BAR_TOP + PAGE_BAR_HEIGHT + 20)*density;
     unsigned columns ← (unsigned)((presentation->width - 32*density) ÷ (11*density));
     if (columns < 8) columns ← 8;
     (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setTextSize", "(F)V"), 18*density);
     if (selected_result == FC_OK && selected.prompt_length) {
         draw_bytes(environment, canvas, paint, (const unsigned char *)selected.prompt,
-                   selected.prompt_length, 16*density, &y, 24*density, columns, 186*density, NULL, NULL);
+                   selected.prompt_length, 16*density, &y, 24*density, columns, y + 46*density, NULL, NULL);
         y ← y + 12*density;
     }
     unsigned char bytes[FC_VIEW_BYTES];
@@ -372,6 +378,8 @@ static void present_stored_response(Presentation *presentation) {
     Result read ← selected_result == FC_OK && selected_request != presentation->conversation.request
         ? read_history_window(&presentation->conversation, &selected, presentation->viewport, bytes, sizeof(bytes), &length)
         : render_stored_window(&presentation->conversation, presentation->viewport, bytes, sizeof(bytes), &length);
+    presentation->next_page_available ← 0;
+    presentation->next_viewport ← presentation->viewport;
     if (read != FC_OK) report_problem(presentation, "Stored text cannot be displayed");
     else if (length) {
         presentation->next_fenced ← presentation->fenced;
@@ -381,14 +389,26 @@ static void present_stored_response(Presentation *presentation) {
                                       &presentation->next_fenced, &presentation->next_line_start);
         presentation->next_viewport ← presentation->viewport + displayed;
         posted_text ← displayed > 0;
+        if (displayed && displayed < length) presentation->next_page_available ← 1;
+        else if (displayed && response_page_follows(&presentation->conversation,
+                selected_request != presentation->conversation.request ? &selected : NULL,
+                presentation->next_viewport, &presentation->next_page_available) != FC_OK)
+            report_problem(presentation, "Next stored page cannot be read");
     } else {
-        presentation->next_viewport ← presentation->viewport;
         draw_label(environment, canvas, paint, presentation->conversation.phase == UNCERTAIN
             ? "Remote outcome unknown. Retry repeats this request."
             : presentation->http2 ? "Ready for a model response." : "Test responder ready.", 16*density, y, 15*density);
     }
     if (presentation->message[0]) draw_label(environment, canvas, paint, presentation->message,
         16*density, bottom - 86*density, 13*density);
+    else if (posted_text) {
+        char range[96];
+        snprintf(range, sizeof(range), "Bytes %llu-%llu%s",
+                 (unsigned long long)(presentation->viewport + 1),
+                 (unsigned long long)presentation->next_viewport,
+                 presentation->next_page_available ? "" : " | End of stored text");
+        draw_label(environment, canvas, paint, range, 16*density, bottom - 86*density, 13*density);
+    }
     draw_label(environment, canvas, paint, presentation->running ? "Stop" : presentation->conversation.phase == UNCERTAIN ? "Retry" : "Send",
                presentation->width - 88*density, bottom - 26*density, 19*density);
     (*environment)->CallVoidMethod(environment, surface,
@@ -637,7 +657,7 @@ static int on_input(int descriptor, int events, void *context) {
             presentation->touch_y ← AMotionEvent_getY(event, 0);
             presentation->touch_down ← 1;
             int bottom ← presentation->content_bottom > 0 ? presentation->content_bottom : presentation->height;
-            handled ← presentation->touch_y > 120*presentation->density && presentation->touch_y < bottom - 112*presentation->density;
+            handled ← presentation->touch_y >= PAGE_BAR_TOP*presentation->density && presentation->touch_y < bottom - 112*presentation->density;
         }
         if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION &&
             (AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK) == AMOTION_EVENT_ACTION_CANCEL)
@@ -656,7 +676,7 @@ static int on_input(int descriptor, int events, void *context) {
             } else if (!presentation->acceptance && y >= 30*presentation->density && y < 60*presentation->density
                 && x > presentation->width - 96*presentation->density) {
                 show_settings(presentation); handled ← 1;
-            } else if (presentation->touch_down && presentation->touch_y > 120*presentation->density &&
+            } else if (presentation->touch_down && presentation->touch_y >= (PAGE_BAR_TOP + PAGE_BAR_HEIGHT)*presentation->density &&
                 presentation->touch_y < bottom - 112*presentation->density &&
                 (vertical > 48*presentation->density || vertical < -48*presentation->density) &&
                 vertical*vertical > horizontal*horizontal) {
@@ -682,10 +702,10 @@ static int on_input(int descriptor, int events, void *context) {
                 presentation->line_start ← 1;
                 presentation->page_count ← 0;
                 present_stored_response(presentation); handled ← 1;
-            } else if (y >= 90*presentation->density && y < 120*presentation->density) {
-                if (x < presentation->width÷4) page_response(presentation, 0);
-                else if (x < presentation->width÷2) page_response(presentation, 1);
-                else if (x < 3*presentation->width÷4) {
+            } else if (y >= PAGE_BAR_TOP*presentation->density && y < (PAGE_BAR_TOP + PAGE_BAR_HEIGHT)*presentation->density) {
+                if (x < page_button_left(presentation->width, 1)) page_response(presentation, 0);
+                else if (x < page_button_left(presentation->width, 2)) page_response(presentation, 1);
+                else if (x < page_button_left(presentation->width, 3)) {
                     presentation->viewport ← 0; presentation->page_count ← 0;
                     presentation->fenced ← 0; presentation->line_start ← 1;
                 }
