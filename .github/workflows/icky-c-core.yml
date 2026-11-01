@@ -55,7 +55,7 @@ jobs:
           src/conversation.c src/render_policy.c src/fixture_transport.c src/provider.c src/settings.c
           transport/native/sse.c
           third-party/appendfat-arena/appendfat_arena.c
-          tests/conversation.c icky-lua.o -Wl,--gc-sections -lm -ldl -o core-tests
+          tests/conversation.c tests/page_controls.c icky-lua.o -Wl,--gc-sections -lm -ldl -o core-tests
       - name: Deterministic fault, transport and replay suite
         run: ./core-tests
       - name: Refresh mutation-test package metadata
