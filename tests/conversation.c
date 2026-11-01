@@ -1192,7 +1192,7 @@ static void lua_policy_cases(void) {
             char marker[24];
             int count ← snprintf(marker, sizeof(marker), "[%04u:0000]", step);
             assert(count > 0 && count < (int)sizeof(marker));
-            assert(!memcmp(plan.bytes + sizeof("data: {\\"text\\":\\"")-1,
+            assert(!memcmp(plan.bytes + 15 /* SSE JSON response prefix */,
                            marker, (size_t)count));
         }
     }
