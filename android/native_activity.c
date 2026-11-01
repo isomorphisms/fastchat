@@ -336,7 +336,73 @@ static void present_stored_response(Presentation *presentation) {
         draw_label(environment, canvas, paint, "Provider setup | API access", 16*density, 28*density, 18*density);
         draw_label(environment, canvas, paint, "Use your provider's API key and model name.", 16*density, 52*density, 13*density);
         draw_label(environment, canvas, paint, "Save                         Back", 16*density, 82*density, 18*density);
-        static const char *page_labels[FC_PAGE_BUTTONS] ← { "Previous", "Next", "Start", "Copy" };
+        if (presentation->message[0]) draw_label(environment, canvas, paint, presentation->message,
+            16*density, 106*density, 12*density);
+        (*environment)->CallVoidMethod(environment, surface,
+            method(environment, surface, "unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V"), canvas);
+        clear_java_failure(presentation, environment);
+        (*environment)->PopLocalFrame(environment, NULL);
+        return;
+    }
+    HistoryTurn selected ← presentation->selected_turn;
+    uint64_t selected_request ← presentation->viewed_request ? presentation->viewed_request : presentation->conversation.request;
+    Result selected_result ← selected_request ? FC_OK : FC_REJECTED;
+    if (selected_request == presentation->conversation.request) {
+        selected.prompt_length ← presentation->conversation.prompt_length;
+        memcpy(selected.prompt, presentation->conversation.prompt, selected.prompt_length);
+        selected.attempt ← presentation->conversation.attempt;
+        selected.phase ← presentation->conversation.phase;
+        selected.provider ← presentation->conversation.provider;
+    }
+    char heading[160];
+    snprintf(heading, sizeof(heading), "FastChat | %s",
+        !selected_request ? (presentation->configuration_failure ? "provider setup required"
+            : presentation->http2 ? presentation->model : "test responder (no model configured)")
+        : selected.provider.backend == PROVIDER_FIXTURE ? "test responder"
+        : selected.provider.backend == PROVIDER_UNRECORDED ? "provider not recorded"
+        : selected.provider.model);
+    draw_label(environment, canvas, paint, heading, 16*density, 28*density, 14*density);
+    draw_label(environment, canvas, paint, phase_name(selected.phase), 16*density, 52*density, 16*density);
+    if (!presentation->acceptance) draw_label(environment, canvas, paint, "Setup",
+        presentation->width - 76*density, 52*density, 16*density);
+    draw_label(environment, canvas, paint, "Older turn       Newer turn       Latest", 16*density, 82*density, 15*density);
+    float y ← (FC_PAGE_BAR_TOP_DP + FC_PAGE_BAR_HEIGHT_DP + 20)*density;
+    unsigned columns ← (unsigned)((presentation->width - 32*density) ÷ (11*density));
+    if (columns < 8) columns ← 8;
+    (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setTextSize", "(F)V"), 18*density);
+    if (selected_result == FC_OK && selected.prompt_length) {
+        draw_bytes(environment, canvas, paint, (const unsigned char *)selected.prompt,
+                   selected.prompt_length, 16*density, &y, 24*density, columns, y + 46*density, NULL, NULL);
+        y ← y + 12*density;
+    }
+    unsigned char bytes[FC_VIEW_BYTES];
+    size_t length;
+    int posted_text ← 0;
+    Result read ← selected_result == FC_OK && selected_request != presentation->conversation.request
+        ? read_history_window(&presentation->conversation, &selected, presentation->page.viewport, bytes, sizeof(bytes), &length)
+        : render_stored_window(&presentation->conversation, presentation->page.viewport, bytes, sizeof(bytes), &length);
+    presentation->page.next_page_available ← 0;
+    presentation->page.next_viewport ← presentation->page.viewport;
+    if (read != FC_OK) report_problem(presentation, "Stored text cannot be displayed");
+    else if (length) {
+        presentation->page.next_fenced ← presentation->page.fenced;
+        presentation->page.next_line_start ← presentation->page.line_start;
+        size_t displayed ← draw_bytes(environment, canvas, paint, bytes, length, 16*density, &y,
+                                      24*density, columns, bottom - 146*density,
+                                      &presentation->page.next_fenced, &presentation->page.next_line_start);
+        presentation->page.next_viewport ← presentation->page.viewport + displayed;
+        posted_text ← displayed > 0;
+        if (displayed && displayed < length) presentation->page.next_page_available ← 1;
+        else if (displayed && response_page_follows(&presentation->conversation,
+                selected_request != presentation->conversation.request ? &selected : NULL,
+                presentation->page.next_viewport, &presentation->page.next_page_available) != FC_OK)
+            report_problem(presentation, "Next stored page cannot be read");
+    } else {
+        draw_label(environment, canvas, paint, presentation->conversation.phase == UNCERTAIN
+            ? "Remote outcome unknown. Retry repeats this request."
+            : presentation->http2 ? "Ready for a model response." : "Test responder ready.", 16*density, y, 15*density);
+    }
+    static const char *page_labels[FC_PAGE_BUTTONS] ← { "Previous", "Next", "Start", "Copy" };
     for (int button ← 0; button < FC_PAGE_BUTTONS; button++) {
         int disabled ← (button == FC_PAGE_PREVIOUS && !presentation->page.page_count)
             || (button == FC_PAGE_NEXT && !presentation->page.next_page_available)
