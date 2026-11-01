@@ -31,6 +31,6 @@ git -C "$lua" diff --quiet HEAD -- '*.c' '*.h'
   "$repository/src/render_policy.c" "$repository/src/fixture_transport.c" "$repository/src/provider.c" "$repository/src/settings.c" \
   "$repository/transport/native/sse.c" \
   "$repository/third-party/appendfat-arena/appendfat_arena.c" \
-  "$repository/tests/conversation.c" "$output.icky-lua.o" -Wl,--gc-sections -lm -ldl -o "$output"
+  "$repository/tests/conversation.c" "$repository/tests/page_controls.c" "$output.icky-lua.o" -Wl,--gc-sections -lm -ldl -o "$output"
 sha256sum "$output"
 echo 'Built test executable; execute with the matching host/emulation runtime.'
