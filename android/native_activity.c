@@ -4,6 +4,7 @@
 #include "render_policy.h"
 #include "transport_boundary.h"
 #include "settings.h"
+#include "page_controls.h"
 #include <android/input.h>
 #include <android/log.h>
 #include <android/looper.h>
@@ -50,17 +51,16 @@ typedef struct {
     int timer, running, cancel, failure;
     FixtureScenario fixture_scenario;
     unsigned fixture_step;
-    size_t wire_offset, page_count;
-    uint64_t previous_pages[64], began_ns;
-    unsigned char previous_fences[64], previous_line_starts[64];
-    int fenced, line_start, next_fenced, next_line_start, next_page_available;
+    size_t wire_offset;
+    uint64_t began_ns;
+    FcPageState page;
     uint64_t created_ns, generation_cpu_ns;
-    uint64_t viewport, next_viewport, last_barrier_ns, terminal_ns, first_posted_ns;
+    uint64_t last_barrier_ns, terminal_ns, first_posted_ns;
     float density;
     int width, height, content_bottom;
     float touch_x, touch_y;
-    int touch_down;
-    char message[160];
+    int touch_down, pressed_button;
+    char message[160], page_notice[80];
 } Presentation;
 
 static void show_settings(Presentation *);
@@ -232,12 +232,12 @@ static void select_page(Presentation *presentation) {
     size_t length ← 0;
     Result result ← presentation->viewed_request
         ? read_history_window(&presentation->conversation, &presentation->selected_turn,
-                              presentation->viewport, bytes, sizeof(bytes), &length)
-        : render_stored_window(&presentation->conversation, presentation->viewport,
+                              presentation->page.viewport, bytes, sizeof(bytes), &length)
+        : render_stored_window(&presentation->conversation, presentation->page.viewport,
                                bytes, sizeof(bytes), &length);
     if (result != FC_OK || !length) return;
-    uint64_t displayed ← presentation->next_viewport - presentation->viewport;
-    if (presentation->next_viewport > presentation->viewport && displayed < length) length ← (size_t)displayed;
+    uint64_t displayed ← presentation->page.next_viewport - presentation->page.viewport;
+    if (presentation->page.next_viewport > presentation->page.viewport && displayed < length) length ← (size_t)displayed;
     int valid;
     if (complete_utf8_prefix(bytes, length, &valid) != length || !valid) {
         report_problem(presentation, "Stored page has invalid UTF-8"); return;
@@ -278,30 +278,38 @@ static void select_page(Presentation *presentation) {
     clear_java_failure(presentation, environment);
     (*environment)->PopLocalFrame(environment, NULL);
 }
-enum { PAGE_BAR_TOP ← 90, PAGE_BAR_HEIGHT ← 48, PAGE_BUTTONS ← 4 };
-static int page_button_left(int width, int button) { return width * button ÷ PAGE_BUTTONS; }
 static void page_response(Presentation *presentation, int forward) {
-    if (!forward) {
-        if (presentation->page_count) {
-            size_t page ← --presentation->page_count;
-            presentation->viewport ← presentation->previous_pages[page];
-            presentation->fenced ← presentation->previous_fences[page];
-            presentation->line_start ← presentation->previous_line_starts[page];
-        } else { presentation->viewport ← 0; presentation->fenced ← 0; presentation->line_start ← 1; }
-    } else if (presentation->next_page_available) {
-        if (presentation->page_count == 64) {
-            memmove(presentation->previous_pages, presentation->previous_pages+1, 63*sizeof(uint64_t));
-            memmove(presentation->previous_fences, presentation->previous_fences+1, 63);
-            memmove(presentation->previous_line_starts, presentation->previous_line_starts+1, 63);
-            presentation->page_count ← 63;
-        }
-        presentation->previous_pages[presentation->page_count] ← presentation->viewport;
-        presentation->previous_fences[presentation->page_count] ← (unsigned char)presentation->fenced;
-        presentation->previous_line_starts[presentation->page_count++] ← (unsigned char)presentation->line_start;
-        presentation->viewport ← presentation->next_viewport;
-        presentation->fenced ← presentation->next_fenced;
-        presentation->line_start ← presentation->next_line_start;
-    }
+    uint64_t before ← presentation->page.viewport;
+    int moved ← fc_page_step(&presentation->page, forward);
+    if (moved) presentation->page_notice[0] ← 0;
+    else snprintf(presentation->page_notice, sizeof(presentation->page_notice), "%s",
+        forward ? "No newer stored page yet" : "Oldest retained page; use Start for beginning");
+    __android_log_print(ANDROID_LOG_INFO, "FastChat",
+        "page_action=%s moved=%d request=%llu from=%llu to=%llu stored=%llu",
+        forward ? "next" : "previous", moved,
+        (unsigned long long)(presentation->viewed_request ? presentation->viewed_request : presentation->conversation.request),
+        (unsigned long long)before, (unsigned long long)presentation->page.viewport,
+        (unsigned long long)presentation->conversation.extents.committed);
+}
+static void draw_page_button(JNIEnv *environment, jobject canvas, jobject paint,
+                             FcPageRect rect, const char *label, float density, int disabled, int pressed) {
+    if (rect.right <= rect.left) return;
+    (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setColor", "(I)V"),
+        (jint)(pressed ? 0xff345675 : disabled ? 0xffdedfdd : 0xffd5e4e8));
+    (*environment)->CallVoidMethod(environment, canvas,
+        method(environment, canvas, "drawRoundRect", "(FFFFFFLandroid/graphics/Paint;)V"),
+        rect.left, rect.top, rect.right, rect.bottom, 7*density, 7*density, paint);
+    (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setColor", "(I)V"),
+        (jint)(pressed ? 0xffffffff : disabled ? 0xff737373 : 0xff222c32));
+    (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setTextSize", "(F)V"), 14*density);
+    jstring text ← (*environment)->NewStringUTF(environment, label);
+    float label_width ← (*environment)->CallFloatMethod(environment, paint,
+        method(environment, paint, "measureText", "(Ljava/lang/String;)F"), text);
+    (*environment)->CallVoidMethod(environment, canvas,
+        method(environment, canvas, "drawText", "(Ljava/lang/String;FFLandroid/graphics/Paint;)V"),
+        text, (rect.left + rect.right - label_width)/2,
+        rect.top + (FC_PAGE_BAR_HEIGHT_DP/2 + 5)*density, paint);
+    (*environment)->DeleteLocalRef(environment, text);
 }
 static void present_stored_response(Presentation *presentation) {
     if (!presentation->window) return;
@@ -328,87 +336,33 @@ static void present_stored_response(Presentation *presentation) {
         draw_label(environment, canvas, paint, "Provider setup | API access", 16*density, 28*density, 18*density);
         draw_label(environment, canvas, paint, "Use your provider's API key and model name.", 16*density, 52*density, 13*density);
         draw_label(environment, canvas, paint, "Save                         Back", 16*density, 82*density, 18*density);
-        if (presentation->message[0]) draw_label(environment, canvas, paint, presentation->message,
-            16*density, 106*density, 12*density);
-        (*environment)->CallVoidMethod(environment, surface,
-            method(environment, surface, "unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V"), canvas);
-        clear_java_failure(presentation, environment);
-        (*environment)->PopLocalFrame(environment, NULL);
-        return;
+        static const char *page_labels[FC_PAGE_BUTTONS] ← { "Previous", "Next", "Start", "Copy" };
+    for (int button ← 0; button < FC_PAGE_BUTTONS; button++) {
+        int disabled ← (button == FC_PAGE_PREVIOUS && !presentation->page.page_count)
+            || (button == FC_PAGE_NEXT && !presentation->page.next_page_available)
+            || (button == FC_PAGE_START && !presentation->page.viewport)
+            || (button == FC_PAGE_COPY && !posted_text);
+        draw_page_button(environment, canvas, paint,
+            fc_page_rect(presentation->width, density, button), page_labels[button],
+            density, disabled, presentation->pressed_button == button);
     }
-    HistoryTurn selected ← presentation->selected_turn;
-    uint64_t selected_request ← presentation->viewed_request ? presentation->viewed_request : presentation->conversation.request;
-    Result selected_result ← selected_request ? FC_OK : FC_REJECTED;
-    if (selected_request == presentation->conversation.request) {
-        selected.prompt_length ← presentation->conversation.prompt_length;
-        memcpy(selected.prompt, presentation->conversation.prompt, selected.prompt_length);
-        selected.attempt ← presentation->conversation.attempt;
-        selected.phase ← presentation->conversation.phase;
-        selected.provider ← presentation->conversation.provider;
-    }
-    char heading[160];
-    snprintf(heading, sizeof(heading), "FastChat | %s",
-        !selected_request ? (presentation->configuration_failure ? "provider setup required"
-            : presentation->http2 ? presentation->model : "test responder (no model configured)")
-        : selected.provider.backend == PROVIDER_FIXTURE ? "test responder"
-        : selected.provider.backend == PROVIDER_UNRECORDED ? "provider not recorded"
-        : selected.provider.model);
-    draw_label(environment, canvas, paint, heading, 16*density, 28*density, 14*density);
-    draw_label(environment, canvas, paint, phase_name(selected.phase), 16*density, 52*density, 16*density);
-    if (!presentation->acceptance) draw_label(environment, canvas, paint, "Setup",
-        presentation->width - 76*density, 52*density, 16*density);
-    draw_label(environment, canvas, paint, "Older turn       Newer turn       Latest", 16*density, 82*density, 15*density);
-    static const char *page_labels[PAGE_BUTTONS] ← { "Previous", "Next", "Start", "Copy" };
-    for (int button ← 0; button < PAGE_BUTTONS; button++)
-        draw_label(environment, canvas, paint, page_labels[button],
-                   page_button_left(presentation->width, button) + 4*density,
-                   (PAGE_BAR_TOP + PAGE_BAR_HEIGHT÷2 + 5)*density, 15*density);
-    float y ← (PAGE_BAR_TOP + PAGE_BAR_HEIGHT + 20)*density;
-    unsigned columns ← (unsigned)((presentation->width - 32*density) ÷ (11*density));
-    if (columns < 8) columns ← 8;
-    (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setTextSize", "(F)V"), 18*density);
-    if (selected_result == FC_OK && selected.prompt_length) {
-        draw_bytes(environment, canvas, paint, (const unsigned char *)selected.prompt,
-                   selected.prompt_length, 16*density, &y, 24*density, columns, y + 46*density, NULL, NULL);
-        y ← y + 12*density;
-    }
-    unsigned char bytes[FC_VIEW_BYTES];
-    size_t length;
-    int posted_text ← 0;
-    Result read ← selected_result == FC_OK && selected_request != presentation->conversation.request
-        ? read_history_window(&presentation->conversation, &selected, presentation->viewport, bytes, sizeof(bytes), &length)
-        : render_stored_window(&presentation->conversation, presentation->viewport, bytes, sizeof(bytes), &length);
-    presentation->next_page_available ← 0;
-    presentation->next_viewport ← presentation->viewport;
-    if (read != FC_OK) report_problem(presentation, "Stored text cannot be displayed");
-    else if (length) {
-        presentation->next_fenced ← presentation->fenced;
-        presentation->next_line_start ← presentation->line_start;
-        size_t displayed ← draw_bytes(environment, canvas, paint, bytes, length, 16*density, &y,
-                                      24*density, columns, bottom - 112*density,
-                                      &presentation->next_fenced, &presentation->next_line_start);
-        presentation->next_viewport ← presentation->viewport + displayed;
-        posted_text ← displayed > 0;
-        if (displayed && displayed < length) presentation->next_page_available ← 1;
-        else if (displayed && response_page_follows(&presentation->conversation,
-                selected_request != presentation->conversation.request ? &selected : NULL,
-                presentation->next_viewport, &presentation->next_page_available) != FC_OK)
-            report_problem(presentation, "Next stored page cannot be read");
-    } else {
-        draw_label(environment, canvas, paint, presentation->conversation.phase == UNCERTAIN
-            ? "Remote outcome unknown. Retry repeats this request."
-            : presentation->http2 ? "Ready for a model response." : "Test responder ready.", 16*density, y, 15*density);
-    }
-    if (presentation->message[0]) draw_label(environment, canvas, paint, presentation->message,
-        16*density, bottom - 86*density, 13*density);
-    else if (posted_text) {
-        char range[96];
-        snprintf(range, sizeof(range), "Bytes %llu-%llu%s",
-                 (unsigned long long)(presentation->viewport + 1),
-                 (unsigned long long)presentation->next_viewport,
-                 presentation->next_page_available ? "" : " | End of stored text");
-        draw_label(environment, canvas, paint, range, 16*density, bottom - 86*density, 13*density);
-    }
+    (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setColor", "(I)V"), (jint)0xff24282b);
+    if (presentation->message[0])
+        draw_label(environment, canvas, paint, presentation->message, 16*density, bottom - 112*density, 13*density);
+    if (presentation->page_notice[0] && !presentation->page.next_page_available)
+        draw_label(environment, canvas, paint, presentation->page_notice,
+                   16*density, bottom - 95*density, 13*density);
+    else if (presentation->page.next_page_available) presentation->page_notice[0] ← 0;
+    char range[120];
+    if (posted_text)
+        snprintf(range, sizeof(range), "Page %llu | bytes %llu-%llu%s",
+                 (unsigned long long)(presentation->page.page_index + 1),
+                 (unsigned long long)(presentation->page.viewport + 1),
+                 (unsigned long long)presentation->page.next_viewport,
+                 presentation->page.next_page_available ? "" : " | End of stored text");
+    else snprintf(range, sizeof(range), "Page %llu | no stored text",
+                  (unsigned long long)(presentation->page.page_index + 1));
+    draw_label(environment, canvas, paint, range, 16*density, bottom - 78*density, 13*density);
     draw_label(environment, canvas, paint, presentation->running ? "Stop" : presentation->conversation.phase == UNCERTAIN ? "Retry" : "Send",
                presentation->width - 88*density, bottom - 26*density, 19*density);
     (*environment)->CallVoidMethod(environment, surface,
@@ -611,15 +565,13 @@ static void send_or_cancel(Presentation *presentation) {
         }
     } else if ((action == POLICY_RETRY ? retry_request_to(&presentation->conversation, &provider) :
                 action == POLICY_SUBMIT ? submit_composer(presentation) : FC_REJECTED) == FC_OK) {
-        presentation->viewport ← 0;
-        presentation->fenced ← 0;
-        presentation->line_start ← 1;
+        fc_page_reset(&presentation->page);
+        presentation->page_notice[0] ← 0;
         presentation->viewed_request ← 0;
         presentation->first_posted_ns ← 0;
         presentation->terminal_ns ← 0;
         presentation->fixture_step ← 0;
         presentation->wire_offset ← 0;
-        presentation->page_count ← 0;
         presentation->began_ns ← monotonic_ns();
         presentation->generation_cpu_ns ← process_cpu_ns();
         if (!presentation->http2 && policy_fixture_scenario(presentation->conversation.prompt, presentation->conversation.prompt_length,
@@ -651,68 +603,109 @@ static int on_input(int descriptor, int events, void *context) {
     while (AInputQueue_getEvent(presentation->input, &event) >= 0) {
         if (AInputQueue_preDispatchEvent(presentation->input, event)) continue;
         int handled ← 0;
-        if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION &&
-            (AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK) == AMOTION_EVENT_ACTION_DOWN) {
-            presentation->touch_x ← AMotionEvent_getX(event, 0);
-            presentation->touch_y ← AMotionEvent_getY(event, 0);
-            presentation->touch_down ← 1;
-            int bottom ← presentation->content_bottom > 0 ? presentation->content_bottom : presentation->height;
-            handled ← presentation->touch_y >= PAGE_BAR_TOP*presentation->density && presentation->touch_y < bottom - 112*presentation->density;
-        }
-        if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION &&
-            (AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK) == AMOTION_EVENT_ACTION_CANCEL)
-            presentation->touch_down ← 0;
-        if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION &&
-            (AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK) == AMOTION_EVENT_ACTION_UP) {
-            float x ← AMotionEvent_getX(event, 0), y ← AMotionEvent_getY(event, 0);
-            int bottom ← presentation->content_bottom > 0 ? presentation->content_bottom : presentation->height;
-            float vertical ← y - presentation->touch_y, horizontal ← x - presentation->touch_x;
-            if (presentation->settings_visible) {
-                if (y >= 60*presentation->density && y < 94*presentation->density) {
-                    if (x < presentation->width÷2) save_settings(presentation);
-                    else close_settings(presentation);
+        if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION) {
+            int action ← AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK;
+            if (action == AMOTION_EVENT_ACTION_DOWN) {
+                presentation->touch_x ← AMotionEvent_getX(event, 0);
+                presentation->touch_y ← AMotionEvent_getY(event, 0);
+                presentation->touch_down ← 1;
+                presentation->pressed_button ← presentation->settings_visible ? FC_PAGE_NONE :
+                    fc_page_hit(presentation->width, presentation->density, presentation->touch_x, presentation->touch_y);
+                int bottom ← presentation->content_bottom > 0 ? presentation->content_bottom : presentation->height;
+                handled ← presentation->pressed_button != FC_PAGE_NONE ||
+                    (presentation->touch_y >= FC_PAGE_BAR_TOP_DP*presentation->density &&
+                     presentation->touch_y < bottom - 112*presentation->density);
+                if (presentation->pressed_button != FC_PAGE_NONE) present_stored_response(presentation);
+            } else if (action == AMOTION_EVENT_ACTION_MOVE && presentation->touch_down) {
+                int origin ← fc_page_hit(presentation->width, presentation->density,
+                                         presentation->touch_x, presentation->touch_y);
+                if (origin != FC_PAGE_NONE) {
+                    int current ← fc_page_hit(presentation->width, presentation->density,
+                                              AMotionEvent_getX(event, 0), AMotionEvent_getY(event, 0));
+                    int active ← current == origin ? origin : FC_PAGE_NONE;
+                    if (active != presentation->pressed_button) {
+                        presentation->pressed_button ← active;
+                        present_stored_response(presentation);
+                    }
+                    handled ← 1;
                 }
-                handled ← 1;
-            } else if (!presentation->acceptance && y >= 30*presentation->density && y < 60*presentation->density
-                && x > presentation->width - 96*presentation->density) {
-                show_settings(presentation); handled ← 1;
-            } else if (presentation->touch_down && presentation->touch_y >= (PAGE_BAR_TOP + PAGE_BAR_HEIGHT)*presentation->density &&
-                presentation->touch_y < bottom - 112*presentation->density &&
-                (vertical > 48*presentation->density || vertical < -48*presentation->density) &&
-                vertical*vertical > horizontal*horizontal) {
-                page_response(presentation, vertical < 0);
-                present_stored_response(presentation); handled ← 1;
-            } else if (presentation->touch_down &&
-                       (vertical*vertical + horizontal*horizontal > 256*presentation->density*presentation->density)) {
-                handled ← 1; /* A drag must not activate a toolbar or Send. */
-            } else if (y > bottom - 72*presentation->density && x > presentation->width - 104*presentation->density) {
-                send_or_cancel(presentation); handled ← 1;
-            } else if (y > 60*presentation->density && y < 90*presentation->density) {
-                uint64_t selected ← presentation->viewed_request ? presentation->viewed_request : presentation->conversation.request;
-                if (x < presentation->width÷3 && selected > 1) presentation->viewed_request ← selected - 1;
-                else if (x < 2*presentation->width÷3 && selected < presentation->conversation.request) presentation->viewed_request ← selected + 1;
-                else if (x >= 2*presentation->width÷3) presentation->viewed_request ← 0;
-                if (presentation->viewed_request && history_turn(&presentation->conversation,
-                    presentation->viewed_request, &presentation->selected_turn) != FC_OK) {
-                    presentation->viewed_request ← 0;
-                    report_problem(presentation, "Stored history cannot be selected");
+            } else if (action == AMOTION_EVENT_ACTION_CANCEL) {
+                int pressed ← presentation->pressed_button;
+                presentation->touch_down ← 0;
+                presentation->pressed_button ← FC_PAGE_NONE;
+                if (pressed != FC_PAGE_NONE) { present_stored_response(presentation); handled ← 1; }
+            } else if (action == AMOTION_EVENT_ACTION_UP) {
+                float x ← AMotionEvent_getX(event, 0), y ← AMotionEvent_getY(event, 0);
+                int bottom ← presentation->content_bottom > 0 ? presentation->content_bottom : presentation->height;
+                float vertical ← y - presentation->touch_y, horizontal ← x - presentation->touch_x;
+                int from_button ← fc_page_hit(presentation->width, presentation->density,
+                                               presentation->touch_x, presentation->touch_y);
+                int to_button ← fc_page_hit(presentation->width, presentation->density, x, y);
+                int tapped_button ← presentation->touch_down && from_button == to_button &&
+                    to_button != FC_PAGE_NONE &&
+                    vertical*vertical + horizontal*horizontal <= 256*presentation->density*presentation->density;
+                int was_pressed ← presentation->pressed_button != FC_PAGE_NONE;
+                presentation->pressed_button ← FC_PAGE_NONE;
+                if (presentation->settings_visible) {
+                    if (y >= 60*presentation->density && y < 94*presentation->density) {
+                        if (x < presentation->width÷2) save_settings(presentation);
+                        else close_settings(presentation);
+                    }
+                    handled ← 1;
+                } else if (presentation->touch_down && !presentation->acceptance &&
+                           y >= 30*presentation->density && y < 60*presentation->density &&
+                           x > presentation->width - 96*presentation->density) {
+                    show_settings(presentation); handled ← 1;
+                } else if (presentation->touch_down &&
+                           presentation->touch_y >= (FC_PAGE_BAR_TOP_DP + FC_PAGE_BAR_HEIGHT_DP)*presentation->density &&
+                           presentation->touch_y < bottom - 112*presentation->density &&
+                           (vertical > 48*presentation->density || vertical < -48*presentation->density) &&
+                           vertical*vertical > horizontal*horizontal) {
+                    page_response(presentation, vertical < 0);
+                    present_stored_response(presentation); handled ← 1;
+                } else if (presentation->touch_down &&
+                           (vertical*vertical + horizontal*horizontal > 256*presentation->density*presentation->density)) {
+                    handled ← 1; /* No drag activates the toolbar or Send. */
+                } else if (from_button != FC_PAGE_NONE || to_button != FC_PAGE_NONE) {
+                    if (tapped_button) {
+                        if (to_button == FC_PAGE_PREVIOUS) page_response(presentation, 0);
+                        else if (to_button == FC_PAGE_NEXT) page_response(presentation, 1);
+                        else if (to_button == FC_PAGE_START) {
+                            int moved ← fc_page_start(&presentation->page);
+                            presentation->page_notice[0] ← 0;
+                            if (!moved) snprintf(presentation->page_notice, sizeof(presentation->page_notice),
+                                                 "Already at beginning");
+                            __android_log_print(ANDROID_LOG_INFO, "FastChat",
+                                "page_action=start moved=%d request=%llu", moved,
+                                (unsigned long long)(presentation->viewed_request ?
+                                    presentation->viewed_request : presentation->conversation.request));
+                        } else select_page(presentation);
+                    }
+                    present_stored_response(presentation); handled ← 1;
+                } else if (presentation->touch_down &&
+                           y > bottom - 72*presentation->density &&
+                           x > presentation->width - 104*presentation->density) {
+                    send_or_cancel(presentation); handled ← 1;
+                } else if (presentation->touch_down &&
+                           y > 60*presentation->density && y < FC_PAGE_BAR_TOP_DP*presentation->density) {
+                    uint64_t selected ← presentation->viewed_request ?
+                        presentation->viewed_request : presentation->conversation.request;
+                    if (x < presentation->width÷3 && selected > 1) presentation->viewed_request ← selected - 1;
+                    else if (x < 2*presentation->width÷3 && selected < presentation->conversation.request)
+                        presentation->viewed_request ← selected + 1;
+                    else if (x >= 2*presentation->width÷3) presentation->viewed_request ← 0;
+                    if (presentation->viewed_request && history_turn(&presentation->conversation,
+                        presentation->viewed_request, &presentation->selected_turn) != FC_OK) {
+                        presentation->viewed_request ← 0;
+                        report_problem(presentation, "Stored history cannot be selected");
+                    }
+                    fc_page_reset(&presentation->page);
+                    presentation->page_notice[0] ← 0;
+                    present_stored_response(presentation); handled ← 1;
                 }
-                presentation->viewport ← 0;
-                presentation->fenced ← 0;
-                presentation->line_start ← 1;
-                presentation->page_count ← 0;
-                present_stored_response(presentation); handled ← 1;
-            } else if (y >= PAGE_BAR_TOP*presentation->density && y < (PAGE_BAR_TOP + PAGE_BAR_HEIGHT)*presentation->density) {
-                if (x < page_button_left(presentation->width, 1)) page_response(presentation, 0);
-                else if (x < page_button_left(presentation->width, 2)) page_response(presentation, 1);
-                else if (x < page_button_left(presentation->width, 3)) {
-                    presentation->viewport ← 0; presentation->page_count ← 0;
-                    presentation->fenced ← 0; presentation->line_start ← 1;
-                }
-                else select_page(presentation);
-                present_stored_response(presentation); handled ← 1;
+                presentation->touch_down ← 0;
+                if (was_pressed && !handled) present_stored_response(presentation);
             }
-            presentation->touch_down ← 0;
         }
         AInputQueue_finishEvent(presentation->input, event, handled);
     }
@@ -991,7 +984,8 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t sav
     presentation->timer ← -1;
     presentation->draft_checkpoint_size ← SIZE_MAX;
     presentation->density ← 1;
-    presentation->line_start ← 1;
+    fc_page_reset(&presentation->page);
+    presentation->pressed_button ← FC_PAGE_NONE;
     presentation->conversation.journal ← -1;
     presentation->conversation.response ← -1;
     presentation->created_ns ← monotonic_ns();
