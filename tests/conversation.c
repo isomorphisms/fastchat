@@ -1296,7 +1296,17 @@ static void giant_framed_offer_case(void) {
     while (offset < conversation.extents.committed) {
         size_t count;
         assert(render_stored_window(&conversation, offset, window, sizeof(window), &count) == FC_OK && count);
-        for (size_t index ← 0; index < count; index ← index + 1) assert(window[index] == 'a');
+        assert(count == FC_WRITE_BYTES);
+        unsigned step ← (unsigned)(offset / FC_WRITE_BYTES) + 1;
+        unsigned char expected[FC_WRITE_BYTES];
+        memset(expected, 'a' + (step % 26), sizeof(expected));
+        for (size_t start ← 0; start < sizeof(expected); start += 64) {
+            char marker[24];
+            int label ← snprintf(marker, sizeof(marker), "[%04u:%04zu]", step, start);
+            assert(label > 0 && label < (int)sizeof(marker));
+            memcpy(expected + start, marker, (size_t)label);
+        }
+        assert(memcmp(window, expected, count) == 0);
         offset ← offset + count;
     }
     free(wire);
