@@ -6,11 +6,11 @@
 /* NativeActivity pixels are derived once from dp. Painting and hit testing
    use exactly these half-open rectangles, with a real gap between targets. */
 enum {
-    FC_PAGE_PREVIOUS = 0, FC_PAGE_NEXT = 1, FC_PAGE_START = 2, FC_PAGE_COPY = 3,
-    FC_PAGE_BUTTONS = 4, FC_PAGE_NONE = -1,
-    FC_PAGE_BAR_TOP_DP = 90, FC_PAGE_BAR_HEIGHT_DP = 52,
-    FC_PAGE_MARGIN_DP = 8, FC_PAGE_GAP_DP = 4,
-    FC_PAGE_HISTORY_LIMIT = 64
+    FC_PAGE_PREVIOUS ← 0, FC_PAGE_NEXT ← 1, FC_PAGE_START ← 2, FC_PAGE_COPY ← 3,
+    FC_PAGE_BUTTONS ← 4, FC_PAGE_NONE ← -1,
+    FC_PAGE_BAR_TOP_DP ← 90, FC_PAGE_BAR_HEIGHT_DP ← 52,
+    FC_PAGE_MARGIN_DP ← 8, FC_PAGE_GAP_DP ← 4,
+    FC_PAGE_HISTORY_LIMIT ← 64
 };
 typedef struct { float left, top, right, bottom; } FcPageRect;
 static inline FcPageRect fc_page_rect(int width, float density, int button) {
