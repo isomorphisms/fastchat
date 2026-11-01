@@ -16,6 +16,7 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+void page_controls_cases(void);
 
 typedef struct { unsigned char *bytes; size_t length, capacity; int finished; } RamControl;
 static int ram_write(RamControl *sink, const void *bytes, size_t length) {
@@ -1186,7 +1187,14 @@ static void lua_policy_cases(void) {
         FixturePlan plan;
         assert(policy_fixture_frame(step, 1, &plan) == FC_OK && plan.length <= FC_POLICY_FRAME_BYTES);
         assert(plan.terminal == (step == 2049));
-        if (step > 0 && step < 2049) assert(plan.length == 4096 + 19);
+        if (step > 0 && step < 2049) {
+            assert(plan.length == FC_WRITE_BYTES + 19);
+            char marker[24];
+            int count ← snprintf(marker, sizeof(marker), "[%04u:0000]", step);
+            assert(count > 0 && count < (int)sizeof(marker));
+            assert(!memcmp(plan.bytes + sizeof("data: {\\"text\\":\\"")-1,
+                           marker, (size_t)count));
+        }
     }
     printf("PASS actual Icky Lua composition, composer states, batched barriers, completion/loss/failure fixtures; policy_heap_peak=%zu limit=%u\n",
         policy_memory_peak(), FC_POLICY_BYTES);
@@ -1212,6 +1220,49 @@ static void lua_policy_cases(void) {
     policy_close();
     assert(policy_open() == FC_OK && renderer_follows_prefixes() == expected_renderer);
     puts("PASS malformed policy, instruction/heap bounds and invalid result fail closed; explicit reinitialization");
+}
+
+static void long_numbered_paging_case(void) {
+    Conversation conversation;
+    char path[64];
+    strcpy(path, "/tmp/fastchat-test-XXXXXX");
+    assert(mkdtemp(path) && conversation_open(&conversation, path) == FC_OK);
+    assert(submit_text(&conversation, ":long", 5) == FC_OK);
+    FixtureTransport transport;
+    fixture_transport_open(&transport, &conversation);
+    FixturePlan plan;
+    assert(policy_fixture_frame(0, FIXTURE_LONG, &plan) == FC_OK);
+    assert(fixture_transport_offer(&transport, plan.bytes, plan.length).result == FC_OK);
+    assert(policy_fixture_frame(1, FIXTURE_LONG, &plan) == FC_OK);
+    assert(fixture_transport_offer(&transport, plan.bytes, plan.length).result == FC_OK);
+    assert(commit_stored_prefix(&conversation) == FC_OK);
+    unsigned char shown[FC_VIEW_BYTES];
+    size_t read_length ← 0;
+    int follows ← 0;
+    assert(render_stored_window(&conversation, 0, shown, sizeof(shown), &read_length) == FC_OK);
+    assert(read_length >= 11 && !memcmp(shown, "[0001:0000]", 11));
+    assert(response_page_follows(&conversation, NULL, FC_WRITE_BYTES, &follows) == FC_OK && !follows);
+    /* Concurrent growth: a new chunk becomes eligible without changing
+       request/attempt identity or invalidating a prior selected page. */
+    uint64_t request ← conversation.request, attempt ← conversation.attempt;
+    assert(policy_fixture_frame(2, FIXTURE_LONG, &plan) == FC_OK);
+    assert(fixture_transport_offer(&transport, plan.bytes, plan.length).result == FC_OK);
+    assert(commit_stored_prefix(&conversation) == FC_OK);
+    assert(conversation.request == request && conversation.attempt == attempt);
+    assert(response_page_follows(&conversation, NULL, FC_WRITE_BYTES, &follows) == FC_OK && follows);
+    assert(render_stored_window(&conversation, FC_WRITE_BYTES, shown, sizeof(shown), &read_length) == FC_OK);
+    assert(read_length >= 11 && !memcmp(shown, "[0002:0000]", 11));
+    assert(policy_fixture_frame(2049, FIXTURE_LONG, &plan) == FC_OK && plan.terminal);
+    assert(fixture_transport_offer(&transport, plan.bytes, plan.length).result == FC_OK);
+    assert(conversation.phase == COMPLETED);
+    assert(response_page_follows(&conversation, NULL, 2*FC_WRITE_BYTES, &follows) == FC_OK && !follows);
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, path) == FC_OK && conversation.phase == COMPLETED);
+    assert(read_response_window(&conversation, FC_WRITE_BYTES, 0, shown, sizeof(shown), &read_length) == FC_OK);
+    assert(read_length >= 11 && !memcmp(shown, "[0002:0000]", 11));
+    conversation_close(&conversation);
+    remove_directory(path);
+    puts("PASS distinct numbered streaming fixture, temporary end, new committed chunk, terminal and restart");
 }
 
 static void giant_framed_offer_case(void) {
@@ -1364,6 +1415,8 @@ int main(int argc, char **argv) {
         return benchmark_response(argv[2], argv[3]);
 
     lua_policy_cases();
+    page_controls_cases();
+    long_numbered_paging_case();
     native_retry_order_case();
     arena_hostile_cases();
     durability_death_cases();
