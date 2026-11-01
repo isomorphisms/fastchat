@@ -29,7 +29,7 @@ end
 local fixture_frame ← ƒ(step, scenario)
   if scenario ≟ 1 then
     if step ≟ 0 then return "wire", short_frames[1], false end
-    if step ≥ 1 and step ≤ 2048 then return "repeat", "a", false end
+    if step ≥ 1 and step ≤ 2048 then return "numbered", "a", false end
     if step ≟ 2049 then return "wire", short_frames[5], true end
   elseif step ≥ 0 and step ≤ 4 then
     if step ≟ 4 and scenario ≟ 2 then return "wire", "data: [LOST]\n\n", true end
