@@ -14,7 +14,7 @@ var runtime = ENV.FC_GREASE
 proc qualify(name, expression, diagnostic, selection) {
   var mutant = "$output/$name"
   mkdir -p "$mutant"
-  cp -a "$repository/src" "$repository/scripts" "$repository/tests" "$repository/third-party" "$repository/policy" "$repository/transport" "$mutant/"
+  cp -a "$repository/src" "$repository/scripts" "$repository/tests" "$repository/android" "$repository/third-party" "$repository/policy" "$repository/transport" "$mutant/"
   sed "$expression" "$repository/src/conversation.c" > "$mutant/src/conversation.c"
   if ! "$runtime" "$mutant/scripts/test-core.grease" "$compiler" "$support" "$lua" "$mutant/test" @options > "$mutant/build.log" 2>&1 {
     cat "$mutant/build.log"; echo "FAIL mutation build $name"; exit 1
