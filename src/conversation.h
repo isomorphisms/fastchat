@@ -6,6 +6,12 @@ enum { FC_PROMPT_BYTES ← 1024, FC_WRITE_BYTES ← 4096, FC_BATCH_BYTES ← 163
 typedef enum { FC_OK, FC_REJECTED, FC_BACKPRESSURE, FC_STORAGE_ERROR, FC_CORRUPT, FC_INVALID_TEXT, FC_POLICY_ERROR } Result;
 typedef enum { IDLE, SUBMITTED, GENERATING, CANCEL_PENDING, UNCERTAIN, COMPLETED, CANCELLED, FAILED } Phase;
 typedef enum { SUBMIT ← 1, START, PREFIX, COMPLETE, CANCEL_REQUEST, CANCEL_ACK, FAILURE, TRANSPORT_LOSS, RETRY, ATTEMPT_SUBMIT, TOOL } Event;
+typedef enum { PROVIDER_UNRECORDED, PROVIDER_FIXTURE, PROVIDER_CHAT, PROVIDER_RESPONSE } AttemptBackend;
+/* Public routing identity only. Authorization and CA paths do not belong here. */
+typedef struct {
+    AttemptBackend backend;
+    char origin[512], path[256], model[129];
+} AttemptProvider;
 typedef struct { uint64_t stream; uint64_t offset; } AppendAddress;
 typedef struct { Result result; size_t consumed; } WriteResult;
 typedef struct { uint64_t capacity, written, durable, committed, received, eligible; } Extents;
@@ -27,6 +33,7 @@ typedef struct {
     StoreMeasurements measurements;
     char prompt[FC_PROMPT_BYTES + 1];
     size_t prompt_length;
+    AttemptProvider provider;
     int poisoned, recovered_partial, response_started, pending_submission;
     /* Deterministic fault controls; -1 disables the byte budget. */
     int64_t write_budget;
@@ -39,6 +46,9 @@ Result conversation_open(Conversation *conversation, const char *directory);
 void conversation_close(Conversation *conversation);
 Result submit_text(Conversation *conversation, const char *text, size_t length);
 Result retry_request(Conversation *conversation);
+Result submit_text_to(Conversation *, const char *, size_t, const AttemptProvider *);
+Result retry_request_to(Conversation *, const AttemptProvider *);
+int attempt_provider_valid(const AttemptProvider *);
 Result store_tool_event(Conversation *, uint64_t request, uint64_t attempt, const char *, size_t);
 const char *event_name(Event);
 typedef struct {
@@ -46,6 +56,7 @@ typedef struct {
     Phase phase;
     char prompt[FC_PROMPT_BYTES + 1];
     size_t prompt_length;
+    AttemptProvider provider;
 } HistoryTurn;
 Result history_turn(Conversation *, uint64_t request, HistoryTurn *);
 Result read_history_window(Conversation *, const HistoryTurn *, uint64_t offset,

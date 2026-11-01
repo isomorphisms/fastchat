@@ -19,10 +19,17 @@ static void exercise(const char *origin, const char *ca, const char *root, const
     snprintf(path, sizeof(path), "/candidate-%s", name);
     Conversation conversation;
     assert(conversation_open(&conversation, directory) == FC_OK);
-    assert(submit_text(&conversation, "fixture", 7) == FC_OK);
     TransportBoundary boundary;
     assert(transport_boundary_open(&boundary, &conversation, origin, ca) == FC_OK);
     if (!strcmp(name, "responses")) boundary.request_format ← PROVIDER_RESPONSES;
+    AttemptProvider provider;
+    assert(transport_boundary_provider(&boundary, "fixture", path, &provider) == FC_OK);
+    assert(submit_text_to(&conversation, "fixture", 7, &provider) == FC_OK);
+    assert(transport_boundary_send(&boundary, "different-model", path) == FC_REJECTED);
+    assert(transport_boundary_send(&boundary, "fixture", "/wrong-path") == FC_REJECTED);
+    boundary.request_format ← !strcmp(name, "responses") ? PROVIDER_CHAT_COMPLETIONS : PROVIDER_RESPONSES;
+    assert(transport_boundary_send(&boundary, "fixture", path) == FC_REJECTED);
+    boundary.request_format ← !strcmp(name, "responses") ? PROVIDER_RESPONSES : PROVIDER_CHAT_COMPLETIONS;
     assert(transport_boundary_authorization(&boundary, "Authorization: bad\r\nInjected: x") == FC_REJECTED);
     assert(transport_boundary_authorization(&boundary, "") == FC_OK);
     assert(transport_boundary_send(&boundary, "fixture", path) == FC_OK);
@@ -51,7 +58,8 @@ static void exercise(const char *origin, const char *ca, const char *root, const
     if (!strcmp(name, "stream")) assert(conversation.extents.committed == strlen("Idriç 🐈\n```lua\nreturn 1\n```\n"));
     uint64_t old_attempt ← conversation.attempt;
     if (expected == UNCERTAIN) {
-        assert(retry_request(&conversation) == FC_OK && conversation.attempt != old_attempt);
+        assert(transport_boundary_provider(&boundary, "fixture", "/candidate-stream", &provider) == FC_OK);
+        assert(retry_request_to(&conversation, &provider) == FC_OK && conversation.attempt != old_attempt);
         assert(admit_event(&conversation, conversation.request, old_attempt, COMPLETE) == FC_REJECTED);
         assert(transport_boundary_send(&boundary, "fixture", "/candidate-stream") == FC_OK);
         while (boundary.active || boundary.pending) {
@@ -81,11 +89,42 @@ static void exercise(const char *origin, const char *ca, const char *root, const
     assert(waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0);
     printf("PASS HTTP2 TLS/provider/storage/replay %s\n", name);
 }
+static void exercise_context(const char *origin, const char *ca, const char *root, ProviderRequestFormat format) {
+    char directory[4096];
+    const char *name ← format == PROVIDER_RESPONSES ? "context-responses" : "context-chat";
+    const char *endpoint ← format == PROVIDER_RESPONSES ? "/candidate-context-responses" : "/candidate-context-chat";
+    snprintf(directory, sizeof(directory), "%s/%s", root, name);
+    for (unsigned turn ← 0; turn < 2; turn++) {
+        Conversation conversation;
+        assert(conversation_open(&conversation, directory) == FC_OK);
+        if (turn) assert(conversation.phase == COMPLETED && conversation.request == 1);
+        const char *prompt ← turn ? "follow-up λ" : "fixture";
+        TransportBoundary boundary;
+        assert(transport_boundary_open(&boundary, &conversation, origin, ca) == FC_OK);
+        boundary.request_format ← format;
+        AttemptProvider provider;
+        assert(transport_boundary_provider(&boundary, "fixture", endpoint, &provider) == FC_OK);
+        assert(submit_text_to(&conversation, prompt, strlen(prompt), &provider) == FC_OK);
+        assert(transport_boundary_send(&boundary, "fixture", endpoint) == FC_OK);
+        uint64_t start ← now();
+        while (boundary.active || boundary.pending) {
+            assert(now() - start < 10000000000u);
+            assert(transport_boundary_poll(&boundary) == FC_OK);
+            usleep(1000);
+        }
+        assert(conversation.phase == COMPLETED);
+        transport_boundary_close(&boundary);
+        conversation_close(&conversation);
+    }
+    printf("PASS HTTP2 TLS two-turn durable replay/context %s\n", name);
+}
 int main(int count, char **arguments) {
     assert(count == 4);
     const char *names[] ← {"stream", "tool", "failure", "bad", "giant", "incomplete", "loss", "cancel", "slow", "responses", "usage"};
     Phase expected[] ← {COMPLETED, COMPLETED, FAILED, FAILED, FAILED, UNCERTAIN, UNCERTAIN, CANCELLED, COMPLETED, COMPLETED, COMPLETED};
     for (size_t index ← 0; index < sizeof(expected)÷sizeof(expected[0]); index ← index + 1)
         exercise(arguments[1], arguments[2], arguments[3], names[index], expected[index]);
+    exercise_context(arguments[1], arguments[2], arguments[3], PROVIDER_CHAT_COMPLETIONS);
+    exercise_context(arguments[1], arguments[2], arguments[3], PROVIDER_RESPONSES);
     return 0;
 }

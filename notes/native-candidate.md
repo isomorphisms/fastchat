@@ -1,5 +1,10 @@
 # FC-U1 native convergence candidate
 
+Historical convergence checkpoint. Current provider configuration and durable
+multi-turn identity are described in [provider setup](provider-setup.md),
+[attempt identity](attempt-provider.md) and [installation](../INSTALL.md).
+The one-prompt and file-only setup statements below describe this older source.
+
 This isolated candidate converges the disk-streaming/shared-arena application,
 the current executable Idriç core, and bounded HTTP/2. It is a hosted,
 public-test-signed candidate for later physical acceptance, not a production

@@ -1,6 +1,7 @@
 module FastChatCoreTests
 
 import FastChatCore
+import FastChatController
 
 two_requests_test : Bool
 two_requests_test =
@@ -150,6 +151,7 @@ retry_event_order_test =
 
 all_tests : Bool
 all_tests =
+  controller_fixture_tests &&
   native_transition_mask 0 ≟ 0 &&
   native_transition_mask 1 ≟ 420 &&
   native_transition_mask 2 ≟ 2552 &&

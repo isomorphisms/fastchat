@@ -1,8 +1,8 @@
 #!/usr/bin/env grease
 # Qualification invokes the existing compiler/link and generic package routes.
 set -eu -o pipefail
-if (len(ARGV) !== 9) {
-  echo 'usage: qualify-reproducibility.grease ICK LIBEXEC NDK LUA HTTP2_PREFIX PACKAGER FIRST_NATIVE REPEAT_DIRECTORY OUTPUT_APK'
+if (len(ARGV) < 9 or len(ARGV) > 10) {
+  echo 'usage: qualify-reproducibility.grease ICK LIBEXEC NDK LUA HTTP2_PREFIX PACKAGER FIRST_NATIVE REPEAT_DIRECTORY OUTPUT_APK [ABI]'
   exit 2
 }
 var directory = $(dirname "$0")
@@ -17,10 +17,12 @@ var packager = ARGV[5]
 var first_native = ARGV[6]
 var repeated = ARGV[7]
 var output = ARGV[8]
-"$runtime" "$repository/scripts/build-native.grease" "$compiler" "$support" "$ndk" "$lua" "$repeated" "$http2"
+var abi = 'armeabi-v7a'
+if (len(ARGV) === 10) { setvar abi = ARGV[9] }
+"$runtime" "$repository/scripts/build-native.grease" "$compiler" "$support" "$ndk" "$lua" "$repeated" "$http2" "$abi"
 cmp "$first_native" "$repeated/libfastchat.so"
-"$runtime" "$repository/scripts/package-native.grease" "$packager" "$first_native" "$output"
-"$runtime" "$repository/scripts/package-native.grease" "$packager" "$repeated/libfastchat.so" "$repeated/repeated.apk"
+"$runtime" "$repository/scripts/package-native.grease" "$packager" "$first_native" "$output" "$abi"
+"$runtime" "$repository/scripts/package-native.grease" "$packager" "$repeated/libfastchat.so" "$repeated/repeated.apk" "$abi"
 cmp "$output" "$repeated/repeated.apk"
 sha256sum "$first_native" "$repeated/libfastchat.so" "$output" "$repeated/repeated.apk" > "$repeated/reproducibility-digests.txt"
 cat "$repeated/reproducibility-digests.txt"

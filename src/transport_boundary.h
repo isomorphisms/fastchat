@@ -9,7 +9,9 @@ typedef struct {
     int active, pending;
     Event pending_event;
     ProviderRequestFormat request_format;
+    char origin[512];
 } TransportBoundary;
+Result transport_boundary_provider(const TransportBoundary *, const char *model, const char *path, AttemptProvider *);
 Result transport_boundary_open(TransportBoundary *, Conversation *, const char *origin, const char *ca);
 Result transport_boundary_send(TransportBoundary *, const char *model, const char *path);
 Result transport_boundary_authorization(TransportBoundary *, const char *header);

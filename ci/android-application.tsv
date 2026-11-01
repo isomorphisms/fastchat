@@ -5,4 +5,4 @@ launcher_label	FastChat live disk
 min_sdk	26
 packaging	split
 armeabi-v7a	supported
-arm64-v8a	unknown
+arm64-v8a	supported

@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const [cert, key, port] = process.argv.slice(2);
 const server = http2.createSecureServer({cert: fs.readFileSync(cert), key: fs.readFileSync(key), allowHTTP1: false});
 let connection = 0;
+const contextSteps = new Map();
+const responseText = 'Idriç 🐈\n```lua\nreturn 1\n```\n';
 server.on('session', session => {
   const identity = ++connection;
   session.fixtureIdentity = identity;
@@ -21,12 +23,17 @@ server.on('stream', (stream, headers) => {
     if (path.startsWith('/candidate-')) {
       let request;
       try { request = JSON.parse(body); } catch { stream.respond({':status': 400}); stream.end(); return; }
-      const expected = path === '/candidate-responses'
-        ? {model: 'fixture', stream: true, input: 'fixture'}
-        : {model: 'fixture', stream: true, messages: [{role: 'user', content: 'fixture'}]};
+      const context = path === '/candidate-context-chat' || path === '/candidate-context-responses';
+      const responses = path === '/candidate-responses' || path === '/candidate-context-responses';
+      const step = contextSteps.get(path) || 0;
+      const messages = context && step === 1
+        ? [{role: 'user', content: 'fixture'}, {role: 'assistant', content: responseText}, {role: 'user', content: 'follow-up λ'}]
+        : [{role: 'user', content: 'fixture'}];
+      const expected = {model: 'fixture', stream: true, [responses ? 'input' : 'messages']: messages};
       if (JSON.stringify(request) !== JSON.stringify(expected)) {
         stream.respond({':status': 400}); stream.end(); return;
       }
+      if (context) contextSteps.set(path, step + 1);
       stream.respond({':status': 200, 'content-type': 'text/event-stream'});
       const write = value => stream.write(`data: ${JSON.stringify(value)}\r\n\r\n`);
       const delta = text => ({type: 'response.output_text.delta', delta: text});

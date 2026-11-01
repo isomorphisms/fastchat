@@ -1,5 +1,6 @@
 #include "render_policy.h"
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include "lua.h"
 #include "lauxlib.h"
@@ -141,11 +142,21 @@ Result policy_fixture_frame(unsigned step, FixtureScenario scenario, FixturePlan
         if (length > sizeof(plan->bytes)) return reject_policy();
         memcpy(plan->bytes, bytes, length);
         plan->length ← length;
-    } else if (!strcmp(kind, "repeat") && length == 1) {
+    } else if (!strcmp(kind, "numbered") && length == 1) {
         static const char prefix[] ← "data: {\"text\":\"";
         static const char suffix[] ← "\"}\n\n";
         memcpy(plan->bytes, prefix, sizeof(prefix)-1);
-        memset(plan->bytes+sizeof(prefix)-1, bytes[0], FC_WRITE_BYTES);
+        /* Print a bounded marker every 64 response bytes. A C67 viewport
+           now visibly changes even if it begins in the middle of a chunk. */
+        unsigned char *body ← plan->bytes + sizeof(prefix)-1;
+        memset(body, 'a' + (step % 26), FC_WRITE_BYTES);
+        for (size_t offset ← 0; offset < FC_WRITE_BYTES; offset += 64) {
+            char marker[24];
+            int count ← snprintf(marker, sizeof(marker), "[%04u:%04zu]", step, offset);
+            if (count < 1 || (size_t)count > 64 || (size_t)count >= sizeof(marker))
+                return reject_policy();
+            memcpy(body + offset, marker, (size_t)count);
+        }
         memcpy(plan->bytes+sizeof(prefix)-1+FC_WRITE_BYTES, suffix, sizeof(suffix)-1);
         plan->length ← sizeof(prefix)-1 + FC_WRITE_BYTES + sizeof(suffix)-1;
     } else return reject_policy();
@@ -161,4 +172,14 @@ Result render_stored_window(Conversation *conversation, uint64_t offset,
     int follows ← renderer_follows_prefixes();
     if (follows < 0) { *length ← 0; return FC_POLICY_ERROR; }
     return read_response_window(conversation, offset, follows, bytes, capacity, length);
+}
+Result response_page_follows(Conversation *conversation, const HistoryTurn *history,
+                             uint64_t displayed_end, int *available) {
+    unsigned char probe[4]; /* At most one UTF-8 scalar is needed to enable Next. */
+    size_t length ← 0;
+    Result result ← history
+        ? read_history_window(conversation, history, displayed_end, probe, sizeof(probe), &length)
+        : render_stored_window(conversation, displayed_end, probe, sizeof(probe), &length);
+    *available ← result == FC_OK && length != 0;
+    return result;
 }

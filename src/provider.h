@@ -23,4 +23,8 @@ Result provider_request_body(const char *model, const char *prompt, size_t lengt
                              char *body, size_t capacity, size_t *written);
 Result provider_request_body_for(ProviderRequestFormat, const char *model, const char *prompt,
                                  size_t length, char *body, size_t capacity, size_t *written);
+/* Canonical durable history, bounded by the caller's wire-body capacity.
+   Refusal never returns a partial body as a successful request. */
+Result provider_conversation_body_for(ProviderRequestFormat, const char *model, Conversation *,
+                                     char *body, size_t capacity, size_t *written);
 #endif

@@ -69,7 +69,7 @@ const run = async (name, first, second, mode) => {
       const status = await new Promise(resolve => child.on('close', resolve));
       fs.writeFileSync(path.join(directory, 'boundary.log'), output + errors);
       assert.equal(status, 0, errors + output);
-      assert.equal(serverLog.split('\n').filter(line => line.startsWith('request\t')).length, 13, 'eleven paths plus two explicit retries; no hidden POST retry');
+      assert.equal(serverLog.split('\n').filter(line => line.startsWith('request\t')).length, 17, 'eleven paths, two explicit retries, four two-turn context POSTs; no hidden POST retry');
       process.stdout.write(output);
       return;
     }

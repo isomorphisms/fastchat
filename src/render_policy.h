@@ -22,4 +22,6 @@ Result policy_fixture_frame(unsigned step, FixtureScenario scenario, FixturePlan
 int renderer_follows_prefixes(void);
 Result render_stored_window(Conversation *conversation, uint64_t offset,
                             unsigned char *bytes, size_t capacity, size_t *length);
+Result response_page_follows(Conversation *conversation, const HistoryTurn *history,
+                             uint64_t displayed_end, int *available);
 #endif
