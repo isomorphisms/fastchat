@@ -67,7 +67,7 @@ for source in (['curl_transport', 'sse', 'provider_framing']) {
   -DMAKE_LIB -DLUA_USE_POSIX -c "$lua/onelua.c" -o "$output/icky-lua.o"
 "$compiler" "-B$support/" "--sysroot=$sysroot" -nostdinc -isystem "$builtin" -isystem "$sysroot/usr/include" \
   -isystem "$sysroot/usr/include/$header_target" "-I$repository/src" @flags \
-  "-DFC_SOURCE_REVISION=\"$revision\"" \
+    "-I$repository/packaging/native/presentation" "-DFC_SOURCE_REVISION=\"$revision\"" \
   -c "$repository/android/native_activity.c" -o "$output/native_activity.o"
 # ICK supplies every first-party C object. NDK supplies Bionic CRT, link editor,
 # platform stubs and the ARM helper runtime; there is no Clang C compilation.

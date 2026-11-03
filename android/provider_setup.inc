@@ -131,7 +131,7 @@ static void attach_settings(Presentation *presentation) {
     jclass layout_type ← (*environment)->GetObjectClass(environment, presentation->settings_layout);
     int width ← (*environment)->CallIntMethod(environment, decor, method(environment, decor, "getWidth", "()I"));
     int bottom ← presentation->content_bottom > 0 ? presentation->content_bottom : presentation->height;
-    int height ← bottom - (int)(136*presentation->density);
+    int height ← presentation->native_panel ? bottom : bottom - (int)(136*presentation->density);
     if (height < (int)(48*presentation->density)) height ← (int)(48*presentation->density);
     if (!clear_java_failure(presentation, environment) && token && width > 0) {
         (*environment)->SetObjectField(environment, presentation->settings_layout,
@@ -163,6 +163,14 @@ static void show_settings(Presentation *presentation) {
         jobject linear ← (*environment)->NewObject(environment, linear_type,
             (*environment)->GetMethodID(environment, linear_type, "<init>", "(Landroid/content/Context;)V"), activity);
         (*environment)->CallVoidMethod(environment, linear, method(environment, linear, "setOrientation", "(I)V"), 1);
+        if (presentation->native_panel) {
+            jobject controls ← m3_new(environment, activity, "android/widget/LinearLayout");
+            jobject save ← m3_button(environment, activity, presentation->native_listener, presentation->theme, UI_SAVE, "Save provider", 1);
+            jobject close ← m3_button(environment, activity, presentation->native_listener, presentation->theme, UI_CLOSE, "Back", 0);
+            m3_add(environment, controls, save, 0, -2, 1.0f);
+            m3_add(environment, controls, close, 0, -2, 1.0f);
+            m3_add(environment, linear, controls, -1, -2, 0.0f);
+        }
         (*environment)->CallVoidMethod(environment, scroll, method(environment, scroll, "setBackgroundColor", "(I)V"), (jint)0xfff6f2e9);
         const char *labels[] ← {"HTTPS origin", "Endpoint path", "Model", "Format: chat-completions or responses",
             "Authorization header (optional)", "CA: system or an absolute PEM path"};
@@ -190,7 +198,7 @@ static void show_settings(Presentation *presentation) {
         (*environment)->SetIntField(environment, layout,
             (*environment)->GetFieldID(environment, layout_type, "gravity", "I"), 51); /* TOP | LEFT */
         (*environment)->SetIntField(environment, layout,
-            (*environment)->GetFieldID(environment, layout_type, "y", "I"), (int)(120*presentation->density));
+            (*environment)->GetFieldID(environment, layout_type, "y", "I"), presentation->native_panel ? 0 : (int)(120*presentation->density));
         (*environment)->SetIntField(environment, layout,
             (*environment)->GetFieldID(environment, layout_type, "softInputMode", "I"), 16);
         presentation->settings_panel ← (*environment)->NewGlobalRef(environment, scroll);
