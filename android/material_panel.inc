@@ -196,16 +196,24 @@ static void material_present(Presentation *p) {
     if (length) response_page_follows(&p->conversation,
         request != p->conversation.request ? &selected : NULL, p->page.next_viewport, &p->page.next_page_available);
     if (p->native_revision != p->conversation.sequence || p->native_request != request || p->native_offset != p->page.viewport) {
-        jstring prompt ← material_utf8(e, (const unsigned char *)selected.prompt, request ? selected.prompt_length : 0);
-        jstring response ← material_utf8(e, bytes, length);
-        (*e)->CallVoidMethod(e, p->native_prompt, method(e, p->native_prompt, "setText", "(Ljava/lang/CharSequence;)V"), prompt);
-        (*e)->CallVoidMethod(e, p->native_response, method(e, p->native_response, "setText", "(Ljava/lang/CharSequence;)V"), response);
-        jstring prefix ← (*e)->NewStringUTF(e, "Assistant response, selectable text. ");
-        jstring description ← (*e)->CallObjectMethod(e, prefix, method(e, prefix, "concat", "(Ljava/lang/String;)Ljava/lang/String;"), response);
-        (*e)->CallVoidMethod(e, p->native_response, method(e, p->native_response, "setContentDescription", "(Ljava/lang/CharSequence;)V"), description);
-        prefix ← (*e)->NewStringUTF(e, "User message. ");
-        description ← (*e)->CallObjectMethod(e, prefix, method(e, prefix, "concat", "(Ljava/lang/String;)Ljava/lang/String;"), prompt);
-        (*e)->CallVoidMethod(e, p->native_prompt, method(e, p->native_prompt, "setContentDescription", "(Ljava/lang/CharSequence;)V"), description);
+        if (p->native_request != request) {
+            jstring prompt ← material_utf8(e, (const unsigned char *)selected.prompt, request ? selected.prompt_length : 0);
+            (*e)->CallVoidMethod(e, p->native_prompt, method(e, p->native_prompt, "setText", "(Ljava/lang/CharSequence;)V"), prompt);
+            jstring prefix ← (*e)->NewStringUTF(e, "User message. ");
+            jstring description ← (*e)->CallObjectMethod(e, prefix, method(e, prefix, "concat", "(Ljava/lang/String;)Ljava/lang/String;"), prompt);
+            (*e)->CallVoidMethod(e, p->native_prompt, method(e, p->native_prompt, "setContentDescription", "(Ljava/lang/CharSequence;)V"), description);
+        }
+        /* A stream may append beyond an already full visible page. Keep its
+         * View, layout and selection intact when those displayed bytes match. */
+        if (p->native_request != request || p->native_offset != p->page.viewport ||
+                p->native_response_length != length || memcmp(p->native_response_bytes, bytes, length)) {
+            jstring response ← material_utf8(e, bytes, length);
+            (*e)->CallVoidMethod(e, p->native_response, method(e, p->native_response, "setText", "(Ljava/lang/CharSequence;)V"), response);
+            jstring prefix ← (*e)->NewStringUTF(e, "Assistant response, selectable text. ");
+            jstring description ← (*e)->CallObjectMethod(e, prefix, method(e, prefix, "concat", "(Ljava/lang/String;)Ljava/lang/String;"), response);
+            (*e)->CallVoidMethod(e, p->native_response, method(e, p->native_response, "setContentDescription", "(Ljava/lang/CharSequence;)V"), description);
+            memcpy(p->native_response_bytes, bytes, length); p->native_response_length ← length;
+        }
         p->native_revision ← p->conversation.sequence; p->native_request ← request; p->native_offset ← p->page.viewport;
     }
     (*e)->CallVoidMethod(e, p->native_prompt, method(e, p->native_prompt, "setVisibility", "(I)V"), request ? 0 : 8);

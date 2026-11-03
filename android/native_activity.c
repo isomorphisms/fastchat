@@ -42,6 +42,8 @@ typedef struct {
     jobject native_panel, native_listener, native_status, native_prompt, native_response, native_range, native_send;
     jobject native_page_buttons[FC_PAGE_BUTTONS];
     jobject native_history_buttons[3];
+    unsigned char native_response_bytes[FC_VIEW_BYTES];
+    size_t native_response_length;
     M3Theme theme;
     uint64_t native_revision, native_request, native_offset;
     int composer_attached;
