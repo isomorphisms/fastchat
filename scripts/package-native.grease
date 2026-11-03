@@ -12,7 +12,7 @@ var native = ARGV[1]
 var output = ARGV[2]
 var abi = 'armeabi-v7a'
 if (len(ARGV) === 4) { setvar abi = ARGV[3] }
-test "$abi" = armeabi-v7a || test "$abi" = arm64-v8a
+test "$abi" = armeabi-v7a || test "$abi" = arm64-v8a || test "$abi" = x86_64
 test -f "$packaging/apk/build-nativeactivity-apk.sh"
 var source_commit = ENV.ANDROID_SOURCE_COMMIT
 var runtime = ENV.FC_GREASE

@@ -27,6 +27,19 @@ static void material_label(JNIEnv *e, jobject view, const char *label) {
     (*e)->CallVoidMethod(e, view, method(e, view, "setText", "(Ljava/lang/CharSequence;)V"), text);
     (*e)->DeleteLocalRef(e, text);
 }
+static void material_copy(Presentation *p, JNIEnv *e) {
+    jobject text ← (*e)->CallObjectMethod(e, p->native_response,
+        method(e, p->native_response, "getText", "()Ljava/lang/CharSequence;"));
+    jstring service ← (*e)->NewStringUTF(e, "clipboard");
+    jobject clipboard ← (*e)->CallObjectMethod(e, p->activity->clazz,
+        method(e, p->activity->clazz, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;"), service);
+    jclass type ← (*e)->FindClass(e, "android/content/ClipData");
+    jstring label ← (*e)->NewStringUTF(e, "FastChat response page");
+    jobject clip ← (*e)->CallStaticObjectMethod(e, type, (*e)->GetStaticMethodID(e, type,
+        "newPlainText", "(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Landroid/content/ClipData;"), label, text);
+    (*e)->CallVoidMethod(e, clipboard, method(e, clipboard, "setPrimaryClip", "(Landroid/content/ClipData;)V"), clip);
+    if (!clear_java_failure(p, e)) snprintf(p->message, sizeof(p->message), "Response page copied");
+}
 static void material_action(JNIEnv *e, jobject listener, jobject clicked) {
     (void)listener;
     Presentation *p ← material_owner;
@@ -42,7 +55,7 @@ static void material_action(JNIEnv *e, jobject listener, jobject clicked) {
         if (action == FC_PAGE_PREVIOUS) page_response(p, 0);
         else if (action == FC_PAGE_NEXT) page_response(p, 1);
         else if (action == FC_PAGE_START) fc_page_start(&p->page);
-        else select_page(p);
+        else material_copy(p, e);
     } else {
         uint64_t selected ← p->viewed_request ? p->viewed_request : p->conversation.request;
         if (identity == UI_PREVIOUS_TURN && selected > 1) p->viewed_request ← selected - 1;
@@ -94,6 +107,7 @@ static void create_material_panel(Presentation *p) {
     jstring empty ← (*e)->NewStringUTF(e, "");
     m3_text(e, status, empty, p->theme, 14.0f); m3_add(e, root, status, -1, -2, 0.0f);
     p->native_status ← (*e)->NewGlobalRef(e, status);
+    m3_describe(e, status, "FastChat generation status");
     jobject scroll ← m3_new(e, activity, "android/widget/ScrollView");
     jobject content ← m3_column(e, activity);
     jobject user ← m3_new(e, activity, "android/widget/TextView");
@@ -120,6 +134,7 @@ static void create_material_panel(Presentation *p) {
     jobject range ← m3_new(e, activity, "android/widget/TextView");
     m3_text(e, range, empty, p->theme, 12.0f); m3_add(e, root, range, -1, -2, 0.0f);
     p->native_range ← (*e)->NewGlobalRef(e, range);
+    m3_describe(e, range, "Response page position");
     jobject composer ← m3_new(e, activity, "android/widget/LinearLayout");
     (*e)->CallVoidMethod(e, p->composer, method(e, p->composer, "setTextColor", "(I)V"), p->theme.on_surface);
     (*e)->CallVoidMethod(e, p->composer, method(e, p->composer, "setBackgroundColor", "(I)V"), p->theme.container);
