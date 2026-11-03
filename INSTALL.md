@@ -6,8 +6,16 @@ deletes them. A signature conflict requires investigation, not an uninstall.
 
 ## Choose an APK
 
-- MIRO A1: `armeabi-v7a`.
-- MIRO C67: `arm64-v8a` when a qualified companion artifact is available.
+- SVITOO TAB_P10 (active device): `arm64-v8a` **candidate** only, subject to a current Cat Food inventory and physical tests.
+- MIRO A1 (historical, unavailable): `armeabi-v7a`.
+- MIRO C67 (historical, unavailable): `arm64-v8a`.
+
+Both ABI builds remain maintained. The existing C67 ARM64 result is not physical
+tablet acceptance. A paired build provides `android-plan-tablet.tsv`, distinct
+from the historical phone/C67 ABI plan. The read-only
+`scripts/select-tablet-apk.sh INVENTORY PAIRED_OUTPUT SOURCE_SHA` selects
+a source-bound candidate from Cat Food inventory metadata; it does **not**
+verify signing, install it, or establish that the inventory was acquired live.
 
 Download only an artifact whose source, SHA-256, package, version, ABI and signer
 match its producer receipt. Hosted checks and artifacts are linked from
@@ -31,7 +39,7 @@ Open **Setup** beside the conversation status. Fill in:
 | Model | The exact model ID available to your API account. |
 | Format | `chat-completions` or `responses`, matching the chosen endpoint. |
 | Authorization header | Usually `Authorization: Bearer YOUR_API_KEY`; an empty field clears stored authorization. |
-| CA | `system` uses the phone's system root certificates. An absolute PEM path supports an explicitly configured private CA. |
+| CA | `system` uses the device's system root certificates. An absolute PEM path supports an explicitly configured private CA. |
 
 Tap **Save**, then type a short message and tap **Send**. The editor and keyboard
 handle ordinary Unicode editing, selection and paste. Provider changes are
@@ -75,5 +83,7 @@ saved state. Ordinary signed replacement updates preserve the private store.
 - Earlier readers may reject the new nonempty attempt-identity payload. Keep a
   current signed version; downgrade compatibility is unclaimed.
 
-Physical keyboard, lifecycle, system-trust and live-provider acceptance remain
-required before a release is advertised as usable on either phone.
+Physical tablet IME/keyboard, Unicode input, selection/paste, scrolling,
+rotation, restart, update retention, system trust, responsiveness and a real
+multi-turn provider exchange remain NOT_RUN. Keep the release blocked until
+those and independent production/signing gates have accepted exact receipts.

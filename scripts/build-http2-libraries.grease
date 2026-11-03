@@ -2,7 +2,7 @@
 # Off-device foreign dependency stage, retained from the qualified H2 experiment.
 set -eu -o pipefail
 if (len(ARGV) !== 7) {
-  echo 'usage: build-http2-libraries.grease SOURCES OUTPUT NDK host|a1|c67 CMAKE ICK_DRIVER ICK_LIBEXEC'
+  echo 'usage: build-http2-libraries.grease SOURCES OUTPUT NDK host|armeabi-v7a|arm64-v8a CMAKE ICK_DRIVER ICK_LIBEXEC'
   exit 2
 }
 var sources = ARGV[0]
@@ -23,14 +23,14 @@ test -f "$builtin/stdatomic.h"
 var openssl_target = 'linux-x86_64'
 var cmake_target = []
 var configure_target = []
-test "$platform" = host || test "$platform" = a1 || test "$platform" = c67
+test "$platform" = host || test "$platform" = armeabi-v7a || test "$platform" = arm64-v8a || test "$platform" = a1 || test "$platform" = c67
 if (platform !== 'host') {
   var sysroot = "$ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
   setvar compile_flags = "-B$support/ --sysroot=$sysroot -nostdinc -isystem $builtin -isystem $sysroot/usr/include -isystem $sysroot/usr/include/arm-linux-androideabi -D__ANDROID__ -D__ANDROID_API__=26 -D__ANDROID_MIN_SDK_VERSION__=26 -DBIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD -marm -march=armv7-a -mfloat-abi=softfp -mfpu=vfpv3-d16"
   setvar openssl_target = 'linux-armv4'
   var processor = 'arm'
   var platform_link = 'armv7a-linux-androideabi26-clang'
-  if (platform === 'c67') {
+  if (platform === 'c67' or platform === 'arm64-v8a') {
     setvar compile_flags = "-B$support/ --sysroot=$sysroot -nostdinc -isystem $builtin -isystem $sysroot/usr/include -isystem $sysroot/usr/include/aarch64-linux-android -D__ANDROID__ -D__ANDROID_API__=26 -D__ANDROID_MIN_SDK_VERSION__=26 -DBIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD -ffixed-x18"
     setvar openssl_target = 'linux-aarch64'
     setvar processor = 'aarch64'

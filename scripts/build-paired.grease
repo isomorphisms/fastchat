@@ -33,6 +33,11 @@ mkdir -p "$output"
 sh "$catfood/catfood" plan-android-build "$repository/ci/android-application.tsv" phone "$revision" > "$output/android-plan.tsv"
 rg -q '^phone\tMIRO_A1\tarmeabi-v7a\trequired\tnot_run$' "$output/android-plan.tsv"
 rg -q '^c67\tMIRO_C67\tarm64-v8a\trequired\tnot_run$' "$output/android-plan.tsv"
+# ARM64 support does not turn a C67 physical receipt into TAB_P10 evidence.
+# Keep the paired ABI plan for current AICI, and require independent tablet policy.
+sh "$catfood/catfood" plan-android-build "$repository/ci/android-application.tsv" tablet "$revision" > "$output/android-plan-tablet.tsv"
+rg -q '^requested_target\ttablet$' "$output/android-plan-tablet.tsv"
+rg -q '^tablet\tTAB_P10\tarm64-v8a\trequired\tnot_run$' "$output/android-plan-tablet.tsv"
 setglobal ENV.ANDROID_PACKAGE_ID = 'org.isomorphisms.fastchat.diskstreaming.arena'
 setglobal ENV.ANDROID_VERSION_CODE = '6'
 setglobal ENV.ANDROID_VERSION_NAME = '0.6-candidate'
@@ -49,16 +54,15 @@ setglobal ENV.FC_GREASE = runtime
 for abi in (['armeabi-v7a', 'arm64-v8a']) {
   var driver = arm_driver
   var support = arm_support
-  var target = 'a1'
+  # The foreign dependency stage is ABI-selected, not device-selected.
   if (abi === 'arm64-v8a') {
     setvar driver = arm64_driver
     setvar support = arm64_support
-    setvar target = 'c67'
   }
   var stage = output ++ '/' ++ abi
   mkdir -p "$stage"
-  "$runtime" "$repository/scripts/build-http2-libraries.grease" "$sources" "$stage/http2" "$ndk" "$target" "$cmake" "$driver" "$support"
+  "$runtime" "$repository/scripts/build-http2-libraries.grease" "$sources" "$stage/http2" "$ndk" "$abi" "$cmake" "$driver" "$support"
   "$runtime" "$repository/scripts/build-native.grease" "$driver" "$support" "$ndk" "$lua" "$stage/native" "$stage/http2/prefix" "$abi"
   "$runtime" "$repository/scripts/qualify-reproducibility.grease" "$driver" "$support" "$ndk" "$lua" "$stage/http2/prefix" "$packaging" "$stage/native/libfastchat.so" "$stage/repeated" "$output/fastchat-$abi.apk" "$abi"
 }
-echo 'PASS paired FastChat test APK production; physical and independent admission remain separate'
+echo 'PASS paired native ABI candidates and separate tablet plan; physical/independent admission remain pending'

@@ -1,4 +1,4 @@
-name: FastChat A1 and C67 native candidate
+name: FastChat paired ABI and TAB_P10 native candidate
 on:
   pull_request:
   workflow_dispatch:
@@ -13,9 +13,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: a1
+          - target: arm32-compat
             abi: armeabi-v7a
-          - target: c67
+          - target: tabp10-arm64-candidate
             abi: arm64-v8a
     timeout-minutes: 120
     env:
@@ -36,6 +36,8 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - name: Refuse missing and mismatched TAB_P10 inventories (synthetic)
+        run: sh tests/tablet-selection.sh
       - name: Current Grease implementation runtime
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -93,7 +95,7 @@ jobs:
         run: >
           grease/_bin/cxx-asan/ysh scripts/build-http2-libraries.grease
           "$GITHUB_WORKSPACE/http2-sources" "$GITHUB_WORKSPACE/http2"
-          "$ANDROID_HOME/ndk/29.0.14206865" "${{ matrix.target }}" "$(command -v cmake)"
+          "$ANDROID_HOME/ndk/29.0.14206865" "${{ matrix.abi }}" "$(command -v cmake)"
           "${{ steps.ick.outputs.compiler }}" "${{ env.ICK_SUPPORT }}"
       - name: ICK C and Icky Lua runtime; platform link
         run: >
@@ -108,6 +110,20 @@ jobs:
           grease/_bin/cxx-asan/ysh scripts/qualify-reproducibility.grease
           "${{ steps.ick.outputs.compiler }}" "${{ env.ICK_SUPPORT }}" "$ANDROID_HOME/ndk/29.0.14206865" icky-lua "$GITHUB_WORKSPACE/http2/prefix"
           packaging native/libfastchat.so native-repeat fastchat.apk "${{ matrix.abi }}"
+      - name: Verify ABI, source identity, stable signer and no DEX
+        run: |
+          set -eu
+          sdk="$ANDROID_HOME/build-tools/34.0.0"
+          "$sdk/apksigner" verify --verbose --print-certs fastchat.apk > signer.txt
+          observed=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' signer.txt | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')
+          test "$observed" = "$ANDROID_EXPECTED_CERT_SHA256"
+          "$sdk/aapt2" dump badging fastchat.apk | grep -F "package: name='$ANDROID_PACKAGE_ID'"
+          unzip -Z1 fastchat.apk | grep -Fx "lib/${{ matrix.abi }}/libfastchat.so"
+          if unzip -Z1 fastchat.apk | grep -Eq '(^|/)classes[0-9]*\.dex$'; then
+            echo 'Unexpected application DEX' >&2
+            exit 1
+          fi
+          grep -Fx "$(printf 'source_commit\t%s' '${{ github.event.pull_request.head.sha || github.sha }}')" native/source-binding.tsv
       - name: Preserve stripped artifact and producer receipts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

@@ -1,10 +1,10 @@
 # FastChat
 
 A small native Android interface for talking to AI agents and reading their
-answers on inexpensive phones. Replies stream into a durable disk store;
+answers on constrained Android devices. Replies stream into a durable disk store;
 reading uses a bounded window instead of keeping whole answers in memory.
 
-**Test candidate. Production release is BLOCKED pending physical A1/C67,
+**Test candidate. Production release is BLOCKED pending TAB_P10 physical,
 live-provider and independent producer acceptance.**
 
 - Platform keyboard, Unicode composer, selection and clipboard.
@@ -20,14 +20,18 @@ Use only the signed artifact and source revision identified by its receipt.
 
 ## Hardware evidence
 
-MIRO A1 is primary; MIRO C67 is its ARM64 companion. Hosted compilation and
-packaging do not establish keyboard behavior, readability or handset speed.
+SVITOO TAB_P10 is now the active physical target. Cat Food's retained profile
+records an ARM64 lane; its current physical inventory and installed behavior
+are unverified. MIRO A1/C67 remain historical, unavailable acceptance targets.
+Both ARM32 and ARM64 source builds remain maintained, without treating a C67
+binary as proof of tablet installation.
 
 | Measurement | Evidence |
 | --- | --- |
 | Previous ARM32 APK | 2,257,692 bytes at source `7add1607b43a3ecdfb8175de950955f5b7b22b11` |
-| Current A1/C67 keyboard and reading | Physical acceptance NOT_RUN |
-| Current handset RAM, latency and responsiveness | NOT_MEASURED |
+| Current TAB_P10 keyboard/reading/lifecycle | Physical acceptance NOT_RUN |
+| Current tablet RAM, latency and responsiveness | NOT_MEASURED |
+| A1/C67 current physical acceptance | BLOCKED: devices unavailable |
 | Current live-provider conversation and restart | NOT_RUN |
 
 The [release checklist](notes/release-qualification.md) records the remaining
