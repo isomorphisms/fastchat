@@ -45,6 +45,11 @@ static void material_action(JNIEnv *e, jobject listener, jobject clicked) {
     Presentation *p ← material_owner;
     if (!p || e != p->activity->env || !p->native_panel) return;
     if ((*e)->PushLocalFrame(e, 48) < 0) return;
+    jobject context ← (*e)->CallObjectMethod(e, clicked,
+        method(e, clicked, "getContext", "()Landroid/content/Context;"));
+    if (!(*e)->IsSameObject(e, context, p->activity->clazz)) {
+        (*e)->PopLocalFrame(e, NULL); return; /* retired Activity cannot command a new owner */
+    }
     jint identity ← (*e)->CallIntMethod(e, clicked, method(e, clicked, "getId", "()I"));
     if (identity == UI_SEND) send_or_cancel(p);
     else if (identity == UI_SETUP) show_settings(p);
@@ -90,6 +95,13 @@ static void create_material_panel(Presentation *p) {
     jobject listener ← (*e)->NewObject(e, action_type, (*e)->GetMethodID(e, action_type, "<init>", "()V"));
     p->native_listener ← (*e)->NewGlobalRef(e, listener);
     p->theme ← m3_theme(e, activity);
+    jobject window ← (*e)->CallObjectMethod(e, activity, method(e, activity, "getWindow", "()Landroid/view/Window;"));
+    (*e)->CallVoidMethod(e, window, method(e, window, "setStatusBarColor", "(I)V"), p->theme.surface);
+    (*e)->CallVoidMethod(e, window, method(e, window, "setNavigationBarColor", "(I)V"), p->theme.surface);
+    jobject decor ← (*e)->CallObjectMethod(e, window, method(e, window, "getDecorView", "()Landroid/view/View;"));
+    jint flags ← (*e)->CallIntMethod(e, decor, method(e, decor, "getSystemUiVisibility", "()I"));
+    (*e)->CallVoidMethod(e, decor, method(e, decor, "setSystemUiVisibility", "(I)V"),
+        (flags & ~0x2010) | (p->theme.dark ? 0 : 0x2010));
     jobject root ← m3_column(e, activity);
     (*e)->CallVoidMethod(e, root, method(e, root, "setBackgroundColor", "(I)V"), p->theme.surface);
     (*e)->CallVoidMethod(e, root, method(e, root, "setPadding", "(IIII)V"),
@@ -138,6 +150,7 @@ static void create_material_panel(Presentation *p) {
     jobject composer ← m3_new(e, activity, "android/widget/LinearLayout");
     (*e)->CallVoidMethod(e, p->composer, method(e, p->composer, "setTextColor", "(I)V"), p->theme.on_surface);
     (*e)->CallVoidMethod(e, p->composer, method(e, p->composer, "setBackgroundColor", "(I)V"), p->theme.container);
+    (*e)->CallVoidMethod(e, p->composer, method(e, p->composer, "setHintTextColor", "(I)V"), p->theme.outline);
     m3_describe(e, p->composer, "Message, multiline draft");
     m3_add(e, composer, p->composer, 0, -2, 3.0f);
     jobject send ← material_button(p, e, composer, UI_SEND, "Send", 1);
@@ -180,6 +193,12 @@ static void material_present(Presentation *p) {
         jstring response ← material_utf8(e, bytes, length);
         (*e)->CallVoidMethod(e, p->native_prompt, method(e, p->native_prompt, "setText", "(Ljava/lang/CharSequence;)V"), prompt);
         (*e)->CallVoidMethod(e, p->native_response, method(e, p->native_response, "setText", "(Ljava/lang/CharSequence;)V"), response);
+        jstring prefix ← (*e)->NewStringUTF(e, "Assistant response, selectable text. ");
+        jstring description ← (*e)->CallObjectMethod(e, prefix, method(e, prefix, "concat", "(Ljava/lang/String;)Ljava/lang/String;"), response);
+        (*e)->CallVoidMethod(e, p->native_response, method(e, p->native_response, "setContentDescription", "(Ljava/lang/CharSequence;)V"), description);
+        prefix ← (*e)->NewStringUTF(e, "User message. ");
+        description ← (*e)->CallObjectMethod(e, prefix, method(e, prefix, "concat", "(Ljava/lang/String;)Ljava/lang/String;"), prompt);
+        (*e)->CallVoidMethod(e, p->native_prompt, method(e, p->native_prompt, "setContentDescription", "(Ljava/lang/CharSequence;)V"), description);
         p->native_revision ← p->conversation.sequence; p->native_request ← request; p->native_offset ← p->page.viewport;
     }
     char status[256], range[160];
@@ -187,10 +206,15 @@ static void material_present(Presentation *p) {
         (unsigned long long)p->conversation.request, request ? phase_name(selected.phase) : "Ready",
         p->message[0] ? "\n" : "", p->message);
     material_label(e, p->native_status, status);
+    char accessible[320];
+    snprintf(accessible, sizeof(accessible), "FastChat generation status. %s", status);
+    m3_describe(e, p->native_status, accessible);
     snprintf(range, sizeof(range), "Page %llu · bytes %llu–%llu%s",
         (unsigned long long)(p->page.page_index + 1), (unsigned long long)p->page.viewport,
         (unsigned long long)p->page.next_viewport, p->page.next_page_available ? "" : " · End of stored text");
     material_label(e, p->native_range, range);
+    snprintf(accessible, sizeof(accessible), "Response page position. %s", range);
+    m3_describe(e, p->native_range, accessible);
     m3_enabled(e, p->native_page_buttons[FC_PAGE_PREVIOUS], p->page.page_count != 0);
     m3_enabled(e, p->native_page_buttons[FC_PAGE_NEXT], p->page.next_page_available);
     m3_enabled(e, p->native_page_buttons[FC_PAGE_START], p->page.viewport != 0);
