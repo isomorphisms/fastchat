@@ -10,6 +10,8 @@ static void material_destroy(Presentation *p) {
         if (references[i]) (*e)->DeleteGlobalRef(e, references[i]);
     for (unsigned i ← 0; i < FC_PAGE_BUTTONS; i++)
         if (p->native_page_buttons[i]) (*e)->DeleteGlobalRef(e, p->native_page_buttons[i]);
+    for (unsigned i ← 0; i < 3; i++)
+        if (p->native_history_buttons[i]) (*e)->DeleteGlobalRef(e, p->native_history_buttons[i]);
 }
 
 static jstring material_utf8(JNIEnv *e, const unsigned char *bytes, size_t length) {
@@ -110,9 +112,12 @@ static void create_material_panel(Presentation *p) {
     jstring title ← (*e)->NewStringUTF(e, "FastChat");
     m3_text(e, heading, title, p->theme, 22.0f); m3_add(e, root, heading, -1, -2, 0.0f);
     jobject navigation ← m3_new(e, activity, "android/widget/LinearLayout");
-    material_button(p, e, navigation, UI_PREVIOUS_TURN, "Older", 0);
-    material_button(p, e, navigation, UI_NEXT_TURN, "Newer", 0);
-    material_button(p, e, navigation, UI_LATEST_TURN, "Latest", 0);
+    const int history_actions[3] ← { UI_PREVIOUS_TURN, UI_NEXT_TURN, UI_LATEST_TURN };
+    const char *history_labels[3] ← { "Older", "Newer", "Latest" };
+    for (int i ← 0; i < 3; i++) {
+        jobject button ← material_button(p, e, navigation, history_actions[i], history_labels[i], 0);
+        p->native_history_buttons[i] ← (*e)->NewGlobalRef(e, button);
+    }
     material_button(p, e, navigation, UI_SETUP, "Setup", 0);
     m3_add(e, root, navigation, -1, -2, 0.0f);
     jobject status ← m3_new(e, activity, "android/widget/TextView");
@@ -137,9 +142,11 @@ static void create_material_panel(Presentation *p) {
     p->native_prompt ← (*e)->NewGlobalRef(e, user);
     p->native_response ← (*e)->NewGlobalRef(e, assistant);
     jobject pages ← m3_new(e, activity, "android/widget/LinearLayout");
-    const char *labels[FC_PAGE_BUTTONS] ← { "Previous", "Next", "Start", "Copy" };
+    const char *labels[FC_PAGE_BUTTONS] ← { "Prev", "Next", "Start", "Copy" };
+    const char *descriptions[FC_PAGE_BUTTONS] ← { "Previous response page", "Next response page", "Start of response", "Copy displayed response page" };
     for (int i ← 0; i < FC_PAGE_BUTTONS; i++) {
         jobject button ← material_button(p, e, pages, UI_PAGE_FIRST + i, labels[i], 0);
+        m3_describe(e, button, descriptions[i]);
         p->native_page_buttons[i] ← (*e)->NewGlobalRef(e, button);
     }
     m3_add(e, root, pages, -1, -2, 0.0f);
@@ -201,6 +208,10 @@ static void material_present(Presentation *p) {
         (*e)->CallVoidMethod(e, p->native_prompt, method(e, p->native_prompt, "setContentDescription", "(Ljava/lang/CharSequence;)V"), description);
         p->native_revision ← p->conversation.sequence; p->native_request ← request; p->native_offset ← p->page.viewport;
     }
+    (*e)->CallVoidMethod(e, p->native_prompt, method(e, p->native_prompt, "setVisibility", "(I)V"), request ? 0 : 8);
+    m3_enabled(e, p->native_history_buttons[0], request > 1);
+    m3_enabled(e, p->native_history_buttons[1], request && request < p->conversation.request);
+    m3_enabled(e, p->native_history_buttons[2], p->viewed_request && p->conversation.request);
     char status[256], range[160];
     snprintf(status, sizeof(status), "Turn %llu / %llu · %s%s%s", (unsigned long long)request,
         (unsigned long long)p->conversation.request, request ? phase_name(selected.phase) : "Ready",

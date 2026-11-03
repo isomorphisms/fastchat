@@ -29,8 +29,9 @@
 #define FC_CANVAS_REFERENCE 0
 #endif
 
-/* Platform widgets provide the IME. Canvas/Paint consumes a bounded stored
-   window. No application DEX or response-sized allocation is required. */
+/* Framework Views present a bounded stored window and provide the IME.
+   The typed listener DEX dispatches commands to this existing controller;
+   Canvas/Paint remains an explicitly selected comparison lane. */
 typedef struct {
     ANativeActivity *activity;
     ANativeWindow *window;
@@ -40,6 +41,7 @@ typedef struct {
     jobject composer_manager, composer_layout;
     jobject native_panel, native_listener, native_status, native_prompt, native_response, native_range, native_send;
     jobject native_page_buttons[FC_PAGE_BUTTONS];
+    jobject native_history_buttons[3];
     M3Theme theme;
     uint64_t native_revision, native_request, native_offset;
     int composer_attached;
