@@ -26,7 +26,7 @@ if (abi === 'arm64-v8a') {
   setvar elf_class = 'ELF64'
   setvar elf_machine = 'AArch64'
   setvar target_flags = ['-ffixed-x18']
-} else if (abi === 'x86_64') {
+} elif (abi === 'x86_64') {
   setvar gnu_target = 'x86_64-linux-gnu'
   setvar header_target = 'x86_64-linux-android'
   setvar runtime_arch = 'x86_64'

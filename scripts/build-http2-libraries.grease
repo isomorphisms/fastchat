@@ -36,7 +36,7 @@ if (platform !== 'host') {
     setvar processor = 'aarch64'
     setvar platform_link = 'aarch64-linux-android26-clang'
     test $("$compiler" -dumpmachine) = aarch64-linux-gnu
-  } else if (platform === 'emulator') {
+  } elif (platform === 'emulator') {
     setvar compile_flags = "-B$support/ --sysroot=$sysroot -nostdinc -isystem $builtin -isystem $sysroot/usr/include -isystem $sysroot/usr/include/x86_64-linux-android -D__ANDROID__ -D__ANDROID_API__=26 -D__ANDROID_MIN_SDK_VERSION__=26 -DBIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD"
     setvar openssl_target = 'linux-x86_64'
     setvar processor = 'x86_64'
