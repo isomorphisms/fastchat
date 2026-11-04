@@ -18,7 +18,7 @@ var source_commit = ENV.ANDROID_SOURCE_COMMIT
 var runtime = ENV.FC_GREASE
 test $(git -C "$repository" rev-parse HEAD) = "$source_commit"
 git -C "$repository" diff --quiet HEAD -- android third-party scripts/package-native.grease
-test $(git -C "$packaging" rev-parse HEAD) = 1f9c30aeb7cc719075ed470b6135c4cc8ce194ca
+test $(git -C "$packaging" rev-parse HEAD) = b2ee19121aa3fa1112cd8338b7b6a7baca237b5f
 git -C "$packaging" diff --quiet HEAD -- apk/build-nativeactivity-apk.sh
 # The maintained foreign packager is Bash source (not executable in its tree).
 var epoch = $(git -C "$repository" log -1 --format=%ct)
@@ -29,6 +29,6 @@ env "SOURCE_DATE_EPOCH=$epoch" "ANDROID_EXPECTED_SOURCE_DATE_EPOCH=$epoch" \
   bash "$packaging/apk/build-nativeactivity-apk.sh" "$repository/android/AndroidManifest.xml" "$native" "$abi" "$output"
 var sdk = ENV.ANDROID_BUILD_TOOLS
 sha256sum "$packaging/apk/build-nativeactivity-apk.sh" "$sdk/aapt2" "$sdk/zipalign" "$sdk/apksigner" "$sdk/lib/apksigner.jar" > "$output.packaging-digests.txt"
-printf '%s\t%s\n' packager_commit 1f9c30aeb7cc719075ed470b6135c4cc8ce194ca source_epoch "$epoch" > "$output.packaging-identity.tsv"
+printf '%s\t%s\n' packager_commit b2ee19121aa3fa1112cd8338b7b6a7baca237b5f source_epoch "$epoch" > "$output.packaging-identity.tsv"
 "$sdk/aapt2" version >> "$output.packaging-identity.tsv"
 "$sdk/apksigner" version >> "$output.packaging-identity.tsv"

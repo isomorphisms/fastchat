@@ -53,6 +53,12 @@ requires its real Save Button in that decor tree with FLAG_SECURE, and closes
 back to the composer without saving configuration or sending a provider request.
 # Actual framework surface and key input
 
+Source d7b159b3 compiled and linked the handoff through the actual ICK/NDK path
+for all three ABIs. Its repeat packaging correctly refused because the separate
+package-native coordinator still required the old immutable packager source.
+The coordinator's exact identity check and emitted identity are now updated to
+the same b2ee1912 source as the workflow checkout; the guard is not removed.
+
 Independent IME testing at ai-ci709e95a7 reached a visible keyboard and resized
 layout on API29, then key injection timed out because InputDispatcher had no
 focused application window. The captured application surface was black. The
