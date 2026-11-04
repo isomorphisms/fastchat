@@ -51,3 +51,23 @@ The existing password input masking and settings/draft ownership are preserved.
 The independent observer opens settings in a fresh ordinary emulator Activity,
 requires its real Save Button in that decor tree with FLAG_SECURE, and closes
 back to the composer without saving configuration or sending a provider request.
+# Actual framework surface and key input
+
+Independent IME testing at ai-ci709e95a7 reached a visible keyboard and resized
+layout on API29, then key injection timed out because InputDispatcher had no
+focused application window. The captured application surface was black. The
+earlier bdae cold screenshots on both APIs were also black: accessibility-only
+control tests had not established visible drawing.
+
+Android10's public Window contract explicitly says takeSurface prevents the View
+hierarchy from drawing and takeInputQueue transfers event dispatch. NativeActivity
+claims both before invoking the native onCreate entrypoint. The framework lane
+now uses android-NDK's pre-attachment handoff to release those callbacks, keeping
+the existing native lifecycle/controller and actual framework ViewRoot. The
+Canvas comparison retains its native ownership. A late/failed handoff refuses
+startup, without an alternative renderer or state owner.
+
+The previous bdae candidate is superseded for visible UI qualification. The new
+head requires its own ICK compilation, reproducible signed APKs, compositor-frame
+proof, actual IME/key/Back exercises, and prior semantic/negative tests. No
+physical C67 responsiveness claim follows from these emulator results.

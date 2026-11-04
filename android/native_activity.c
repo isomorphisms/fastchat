@@ -503,10 +503,9 @@ static void present_stored_response(Presentation *presentation) {
     }
     (*environment)->PopLocalFrame(environment, NULL);
 }
-/* NativeActivity takes the main surface AND input queue. A child of its
-   DecorView cannot draw or receive normal widget dispatch. An attached panel
-   has its own ViewRoot/surface/input queue; outside touches still reach the
-   native reader and Send/Stop targets. It needs no application DEX. */
+/* The framework lane releases NativeActivity's surface/input claims before
+   Decor attachment. Its controls then use the actual Activity ViewRoot. The
+   Canvas comparison retains native ownership and its attached editor panel. */
 static void detach_composer(Presentation *presentation) {
     if (!presentation->composer_attached) return;
     if (presentation->native_panel) {
@@ -1164,6 +1163,15 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t sav
         presentation->configuration_failure ← 1;
         report_problem(presentation, "Explicit transport profile unavailable; submission disabled");
     }
+    if (!FC_CANVAS_REFERENCE && !m3_framework_window(activity->env, activity->clazz)) {
+        presentation->failure ← 1;
+        clear_java_failure(presentation, activity->env);
+        report_problem(presentation, "Framework window ownership unavailable");
+        ANativeActivity_finish(activity);
+        return;
+    }
+    if (!FC_CANVAS_REFERENCE)
+        __android_log_print(ANDROID_LOG_INFO, "FastChat", "framework_window=normal-view-surface-and-input");
     create_composer(presentation);
     if (!FC_CANVAS_REFERENCE) create_material_panel(presentation);
     jchar disk_draft[4096];
