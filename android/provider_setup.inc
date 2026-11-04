@@ -128,6 +128,17 @@ static void detach_settings(Presentation *presentation) {
 static void attach_settings(Presentation *presentation) {
     if (!presentation->settings_visible || !presentation->settings_panel) return;
     if (presentation->native_panel) {
+        JNIEnv *e ← presentation->activity->env;
+        if ((*e)->PushLocalFrame(e, 8) < 0) return;
+        jobject window ← (*e)->CallObjectMethod(e, presentation->activity->clazz,
+            method(e, presentation->activity->clazz, "getWindow", "()Landroid/view/Window;"));
+        (*e)->CallVoidMethod(e, window, method(e, window, "addFlags", "(I)V"), 0x2000);
+        int failed ← clear_java_failure(presentation, e);
+        (*e)->PopLocalFrame(e, NULL);
+        if (failed) return;
+        /* Preserve credential screenshot protection on the owning window.
+         * Keep this Activity secure until destruction, including any retained
+         * frame after closing the editor; never expose its old surface buffer. */
         presentation->settings_attached ← activity_content_attach(presentation, presentation->settings_panel);
         return;
     }

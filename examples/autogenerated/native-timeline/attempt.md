@@ -43,3 +43,11 @@ ordinary FrameLayout parameters. Resize/IME follows that Activity hierarchy;
 the native Canvas comparison keeps its existing window path. Controllers,
 stores, credentials, semantic actions and checked callback DEX are unchanged.
 The same independent composer/timeline assertions remain required on both APIs.
+
+Provider settings now apply FLAG_SECURE to their actual owning Activity before
+attaching any credential editor. That Activity stays secure until destruction
+so a retained surface buffer cannot expose credentials immediately after Close.
+The existing password input masking and settings/draft ownership are preserved.
+The independent observer opens settings in a fresh ordinary emulator Activity,
+requires its real Save Button in that decor tree with FLAG_SECURE, and closes
+back to the composer without saving configuration or sending a provider request.

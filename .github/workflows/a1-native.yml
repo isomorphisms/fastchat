@@ -154,7 +154,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           repository: isomorphisms/ai-ci
-          ref: 24a6372b2c4be2c233d3cfa4bdecdb24351581d8
+          ref: 80d1fcd43305df0537e05c69c2bb5a90657185dd
           path: independent-presentation
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
