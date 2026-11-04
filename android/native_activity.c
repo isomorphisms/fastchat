@@ -15,6 +15,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <jni.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +33,24 @@
 /* Framework Views present a bounded stored window and provide the IME.
    The typed listener DEX dispatches commands to this existing controller;
    Canvas/Paint remains an explicitly selected comparison lane. */
+enum { FC_CONTEXT_TURNS ← 3 };
+typedef struct {
+    HistoryTurn turn;
+    unsigned char bytes[1024];
+    size_t length;
+} TimelineTurn;
+typedef struct {
+    pthread_t thread;
+    pthread_mutex_t lock;
+    pthread_cond_t changed;
+    int started, stop, pending, ready;
+    uint64_t requested, completed;
+    Conversation source;
+    uint64_t focus;
+    TimelineTurn turns[FC_CONTEXT_TURNS];
+    size_t count;
+    Result result;
+} TimelineProjection;
 typedef struct {
     ANativeActivity *activity;
     ANativeWindow *window;
@@ -42,6 +61,10 @@ typedef struct {
     jobject native_panel, native_listener, native_status, native_prompt, native_response, native_range, native_send;
     jobject native_page_buttons[FC_PAGE_BUTTONS];
     jobject native_history_buttons[3];
+    jobject native_context[FC_CONTEXT_TURNS][3], native_scroll;
+    uint64_t native_context_requests[FC_CONTEXT_TURNS], native_context_focus;
+    int native_scroll_pending;
+    TimelineProjection timeline;
     unsigned char native_response_bytes[FC_VIEW_BYTES];
     size_t native_response_length;
     M3Theme theme;
@@ -75,7 +98,7 @@ typedef struct {
     char message[160], page_notice[80];
 } Presentation;
 enum { UI_PREVIOUS_TURN ← 101, UI_NEXT_TURN, UI_LATEST_TURN, UI_SETUP,
-       UI_SEND, UI_SAVE, UI_CLOSE, UI_PAGE_FIRST ← 201 };
+       UI_SEND, UI_SAVE, UI_CLOSE, UI_PAGE_FIRST ← 201, UI_CONTEXT_FIRST ← 301 };
 
 static void show_settings(Presentation *);
 static void save_settings(Presentation *);
@@ -810,7 +833,10 @@ static int on_tick(int descriptor, int events, void *context) {
         presentation->draft_check_ns ← draft_now;
         persist_draft(presentation);
     }
-    if (!presentation->running) return 1;
+    if (!presentation->running) {
+        if (!FC_CANVAS_REFERENCE) material_present(presentation);
+        return 1;
+    }
     Result result ← FC_OK;
     if (presentation->http2) {
         result ← transport_boundary_poll(&presentation->network);

@@ -1,17 +1,75 @@
 /* The product surface uses real framework Views in its own ViewRoot. Android's
  * NativeActivity surface remains an explicitly selected Canvas comparator. */
 static Presentation *material_owner;
+/* The UI lends an immutable committed journal prefix, not its mutable controller.
+ * history_turn/read_history_window use pread; the worker never seeks, appends,
+ * opens another store or calls Android. Join precedes closing the lent fds. */
+static void *timeline_read(void *argument) {
+    TimelineProjection *projection ← argument;
+    pthread_mutex_lock(&projection->lock);
+    for (;;) {
+        while (!projection->pending && !projection->stop)
+            pthread_cond_wait(&projection->changed, &projection->lock);
+        if (projection->stop) break;
+        Conversation source ← projection->source;
+        uint64_t focus ← projection->focus, revision ← projection->requested;
+        projection->pending ← 0;
+        pthread_mutex_unlock(&projection->lock);
+        TimelineTurn turns[FC_CONTEXT_TURNS];
+        memset(turns, 0, sizeof(turns));
+        size_t count ← focus > FC_CONTEXT_TURNS ? FC_CONTEXT_TURNS : focus ? (size_t)(focus - 1) : 0;
+        Result result ← FC_OK;
+        for (size_t i ← 0; i < count && result == FC_OK; i++) {
+            result ← history_turn(&source, focus - count + i, &turns[i].turn);
+            if (result == FC_OK) result ← read_history_window(&source, &turns[i].turn, 0,
+                turns[i].bytes, sizeof(turns[i].bytes), &turns[i].length);
+        }
+        pthread_mutex_lock(&projection->lock);
+        if (projection->requested == revision && !projection->stop) {
+            memcpy(projection->turns, turns, sizeof(turns));
+            projection->count ← result == FC_OK ? count : 0;
+            projection->result ← result; projection->completed ← revision; projection->ready ← 1;
+        }
+    }
+    pthread_mutex_unlock(&projection->lock);
+    return NULL;
+}
+static void timeline_start(Presentation *p) {
+    TimelineProjection *projection ← &p->timeline;
+    if (pthread_mutex_init(&projection->lock, NULL) != 0) return;
+    if (pthread_cond_init(&projection->changed, NULL) != 0) {
+        pthread_mutex_destroy(&projection->lock); return;
+    }
+    if (pthread_create(&projection->thread, NULL, timeline_read, projection) != 0) {
+        pthread_cond_destroy(&projection->changed); pthread_mutex_destroy(&projection->lock); return;
+    }
+    projection->started ← 1;
+}
+static void timeline_stop(Presentation *p) {
+    TimelineProjection *projection ← &p->timeline;
+    if (!projection->started) return;
+    pthread_mutex_lock(&projection->lock);
+    projection->stop ← 1; pthread_cond_signal(&projection->changed);
+    pthread_mutex_unlock(&projection->lock);
+    pthread_join(projection->thread, NULL);
+    pthread_cond_destroy(&projection->changed); pthread_mutex_destroy(&projection->lock);
+    projection->started ← 0;
+}
 static void material_destroy(Presentation *p) {
     if (material_owner == p) material_owner ← NULL;
+    timeline_stop(p);
     JNIEnv *e ← p->activity->env;
     jobject references[] ← {p->native_panel, p->native_listener, p->native_status,
-        p->native_prompt, p->native_response, p->native_range, p->native_send};
+        p->native_prompt, p->native_response, p->native_range, p->native_send, p->native_scroll};
     for (unsigned i ← 0; i < sizeof(references)/sizeof(references[0]); i++)
         if (references[i]) (*e)->DeleteGlobalRef(e, references[i]);
     for (unsigned i ← 0; i < FC_PAGE_BUTTONS; i++)
         if (p->native_page_buttons[i]) (*e)->DeleteGlobalRef(e, p->native_page_buttons[i]);
     for (unsigned i ← 0; i < 3; i++)
         if (p->native_history_buttons[i]) (*e)->DeleteGlobalRef(e, p->native_history_buttons[i]);
+    for (unsigned i ← 0; i < FC_CONTEXT_TURNS; i++)
+        for (unsigned role ← 0; role < 3; role++)
+            if (p->native_context[i][role]) (*e)->DeleteGlobalRef(e, p->native_context[i][role]);
 }
 
 static jstring material_utf8(JNIEnv *e, const unsigned char *bytes, size_t length) {
@@ -28,6 +86,55 @@ static void material_label(JNIEnv *e, jobject view, const char *label) {
     jstring text ← material_utf8(e, (const unsigned char *)label, strlen(label));
     (*e)->CallVoidMethod(e, view, method(e, view, "setText", "(Ljava/lang/CharSequence;)V"), text);
     (*e)->DeleteLocalRef(e, text);
+}
+static void timeline_present(Presentation *p, JNIEnv *e, uint64_t focus) {
+    TimelineProjection *projection ← &p->timeline;
+    if (!projection->started || pthread_mutex_trylock(&projection->lock) != 0) return;
+    if (p->native_context_focus != focus) {
+        projection->source ← p->conversation;
+        projection->focus ← focus; projection->requested++; projection->pending ← 1; projection->ready ← 0;
+        p->native_context_focus ← focus;
+        pthread_cond_signal(&projection->changed);
+        pthread_mutex_unlock(&projection->lock);
+        for (int i ← 0; i < FC_CONTEXT_TURNS; i++) {
+            p->native_context_requests[i] ← 0;
+            for (int role ← 0; role < 3; role++)
+                (*e)->CallVoidMethod(e, p->native_context[i][role], method(e, p->native_context[i][role], "setVisibility", "(I)V"), 8);
+        }
+        return;
+    }
+    if (!projection->ready || projection->completed != projection->requested) {
+        pthread_mutex_unlock(&projection->lock); return;
+    }
+    TimelineTurn turns[FC_CONTEXT_TURNS];
+    memcpy(turns, projection->turns, sizeof(turns));
+    size_t count ← projection->count;
+    Result result ← projection->result;
+    projection->ready ← 0;
+    pthread_mutex_unlock(&projection->lock);
+    if (result != FC_OK) { report_problem(p, "Earlier turns cannot be verified; reopen history"); return; }
+    for (size_t i ← 0; i < count; i++) {
+        if ((*e)->PushLocalFrame(e, 16) < 0) return;
+        TimelineTurn *turn ← &turns[i];
+        jstring user ← material_utf8(e, (const unsigned char *)turn->turn.prompt, turn->turn.prompt_length);
+        jstring assistant ← material_utf8(e, turn->bytes, turn->length);
+        (*e)->CallVoidMethod(e, p->native_context[i][0], method(e, p->native_context[i][0], "setText", "(Ljava/lang/CharSequence;)V"), user);
+        (*e)->CallVoidMethod(e, p->native_context[i][1], method(e, p->native_context[i][1], "setText", "(Ljava/lang/CharSequence;)V"), assistant);
+        char description[128];
+        snprintf(description, sizeof(description), "Earlier user message, turn %llu", (unsigned long long)turn->turn.request);
+        m3_describe(e, p->native_context[i][0], description);
+        snprintf(description, sizeof(description), "Earlier assistant response preview, turn %llu", (unsigned long long)turn->turn.request);
+        m3_describe(e, p->native_context[i][1], description);
+        snprintf(description, sizeof(description), "Read turn %llu · %s%s", (unsigned long long)turn->turn.request,
+            phase_name(turn->turn.phase), turn->length < turn->turn.extent ? " · more text" : "");
+        material_label(e, p->native_context[i][2], description);
+        m3_describe(e, p->native_context[i][2], description);
+        p->native_context_requests[i] ← turn->turn.request;
+        for (int role ← 0; role < 3; role++)
+            (*e)->CallVoidMethod(e, p->native_context[i][role], method(e, p->native_context[i][role], "setVisibility", "(I)V"), 0);
+        (*e)->PopLocalFrame(e, NULL);
+    }
+    p->native_scroll_pending ← 2;
 }
 static void material_copy(Presentation *p, JNIEnv *e) {
     jobject text ← (*e)->CallObjectMethod(e, p->native_response,
@@ -65,7 +172,10 @@ static void material_action(JNIEnv *e, jobject listener, jobject clicked) {
         else material_copy(p, e);
     } else {
         uint64_t selected ← p->viewed_request ? p->viewed_request : p->conversation.request;
-        if (identity == UI_PREVIOUS_TURN && selected > 1) p->viewed_request ← selected - 1;
+        if (identity >= UI_CONTEXT_FIRST && identity < UI_CONTEXT_FIRST + FC_CONTEXT_TURNS) {
+            uint64_t requested ← p->native_context_requests[identity - UI_CONTEXT_FIRST];
+            if (requested && requested < selected) p->viewed_request ← requested;
+        } else if (identity == UI_PREVIOUS_TURN && selected > 1) p->viewed_request ← selected - 1;
         else if (identity == UI_NEXT_TURN && selected < p->conversation.request) p->viewed_request ← selected + 1;
         else if (identity == UI_LATEST_TURN) p->viewed_request ← 0;
         if (p->viewed_request && history_turn(&p->conversation, p->viewed_request, &p->selected_turn) != FC_OK) {
@@ -127,6 +237,26 @@ static void create_material_panel(Presentation *p) {
     m3_describe(e, status, "FastChat generation status");
     jobject scroll ← m3_new(e, activity, "android/widget/ScrollView");
     jobject content ← m3_column(e, activity);
+    p->native_scroll ← (*e)->NewGlobalRef(e, scroll);
+    for (int i ← 0; i < FC_CONTEXT_TURNS; i++) {
+        for (int role ← 0; role < 3; role++) {
+            jobject view ← role == 2
+                ? m3_button(e, activity, listener, p->theme, UI_CONTEXT_FIRST + i, "Read turn", 0)
+                : m3_new(e, activity, "android/widget/TextView");
+            if (role < 2) {
+                m3_text(e, view, empty, p->theme, 16.0f);
+                (*e)->CallVoidMethod(e, view, method(e, view, "setTextIsSelectable", "(Z)V"), JNI_TRUE);
+                (*e)->CallVoidMethod(e, view, method(e, view, "setMaxLines", "(I)V"), 6);
+                (*e)->CallVoidMethod(e, view, method(e, view, "setPadding", "(IIII)V"),
+                    m3_dp(p->theme, 8), m3_dp(p->theme, 8), m3_dp(p->theme, 8), m3_dp(p->theme, 8));
+                if (!role) (*e)->CallVoidMethod(e, view, method(e, view, "setBackgroundColor", "(I)V"), p->theme.container);
+            }
+            (*e)->CallVoidMethod(e, view, method(e, view, "setVisibility", "(I)V"), 8);
+            m3_add(e, content, view, -1, -2, 0.0f);
+            p->native_context[i][role] ← (*e)->NewGlobalRef(e, view);
+            (*e)->DeleteLocalRef(e, view);
+        }
+    }
     jobject user ← m3_new(e, activity, "android/widget/TextView");
     jobject assistant ← m3_new(e, activity, "android/widget/TextView");
     m3_text(e, user, empty, p->theme, 16.0f); m3_text(e, assistant, empty, p->theme, 16.0f);
@@ -169,6 +299,7 @@ static void create_material_panel(Presentation *p) {
     (*e)->SetIntField(e, p->composer_layout, (*e)->GetFieldID(e, layout_type, "gravity", "I"), 48); /* TOP */
     p->native_panel ← (*e)->NewGlobalRef(e, root);
     p->native_revision ← UINT64_MAX;
+    timeline_start(p);
     material_owner ← p;
     clear_java_failure(p, e);
     (*e)->PopLocalFrame(e, NULL);
@@ -179,23 +310,28 @@ static void material_present(Presentation *p) {
     JNIEnv *e ← p->activity->env;
     if ((*e)->PushLocalFrame(e, 32) < 0) return;
     uint64_t request ← p->viewed_request ? p->viewed_request : p->conversation.request;
+    timeline_present(p, e, request);
+    if (p->native_scroll_pending && --p->native_scroll_pending == 0)
+        (*e)->CallBooleanMethod(e, p->native_scroll, method(e, p->native_scroll, "fullScroll", "(I)Z"), 130);
     HistoryTurn selected ← p->selected_turn;
     if (request == p->conversation.request) {
         selected.phase ← p->conversation.phase; selected.prompt_length ← p->conversation.prompt_length;
         memcpy(selected.prompt, p->conversation.prompt, selected.prompt_length);
     }
-    unsigned char bytes[FC_VIEW_BYTES]; size_t length ← 0;
-    Result result ← request != p->conversation.request
+    unsigned char bytes[FC_VIEW_BYTES]; size_t length ← p->native_response_length;
+    int changed ← p->native_revision != p->conversation.sequence || p->native_request != request || p->native_offset != p->page.viewport;
+    Result result ← FC_OK;
+    if (changed) result ← request != p->conversation.request
         ? read_history_window(&p->conversation, &selected, p->page.viewport, bytes, sizeof(bytes), &length)
         : render_stored_window(&p->conversation, p->page.viewport, bytes, sizeof(bytes), &length);
     int valid ← 1;
-    length ← complete_utf8_prefix(bytes, length, &valid);
+    if (changed) length ← complete_utf8_prefix(bytes, length, &valid);
     if (result != FC_OK || !valid) { length ← 0; report_problem(p, "Stored text cannot be displayed"); }
-    p->page.next_viewport ← p->page.viewport + length;
-    p->page.next_page_available ← 0;
-    if (length) response_page_follows(&p->conversation,
-        request != p->conversation.request ? &selected : NULL, p->page.next_viewport, &p->page.next_page_available);
-    if (p->native_revision != p->conversation.sequence || p->native_request != request || p->native_offset != p->page.viewport) {
+    if (changed) {
+        p->page.next_viewport ← p->page.viewport + length;
+        p->page.next_page_available ← 0;
+        if (length) response_page_follows(&p->conversation,
+            request != p->conversation.request ? &selected : NULL, p->page.next_viewport, &p->page.next_page_available);
         if (p->native_request != request) {
             jstring prompt ← material_utf8(e, (const unsigned char *)selected.prompt, request ? selected.prompt_length : 0);
             (*e)->CallVoidMethod(e, p->native_prompt, method(e, p->native_prompt, "setText", "(Ljava/lang/CharSequence;)V"), prompt);
