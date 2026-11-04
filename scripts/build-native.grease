@@ -26,6 +26,13 @@ if (abi === 'arm64-v8a') {
   setvar elf_class = 'ELF64'
   setvar elf_machine = 'AArch64'
   setvar target_flags = ['-ffixed-x18']
+} elif (abi === 'x86_64') {
+  setvar gnu_target = 'x86_64-linux-gnu'
+  setvar header_target = 'x86_64-linux-android'
+  setvar runtime_arch = 'x86_64'
+  setvar elf_class = 'ELF64'
+  setvar elf_machine = 'Advanced Micro Devices X86-64'
+  setvar target_flags = []
 } else {
   test "$abi" = armeabi-v7a
 }
@@ -67,7 +74,7 @@ for source in (['curl_transport', 'sse', 'provider_framing']) {
   -DMAKE_LIB -DLUA_USE_POSIX -c "$lua/onelua.c" -o "$output/icky-lua.o"
 "$compiler" "-B$support/" "--sysroot=$sysroot" -nostdinc -isystem "$builtin" -isystem "$sysroot/usr/include" \
   -isystem "$sysroot/usr/include/$header_target" "-I$repository/src" @flags \
-  "-DFC_SOURCE_REVISION=\"$revision\"" \
+    "-I$repository/packaging/native/presentation" "-DFC_SOURCE_REVISION=\"$revision\"" \
   -c "$repository/android/native_activity.c" -o "$output/native_activity.o"
 # ICK supplies every first-party C object. NDK supplies Bionic CRT, link editor,
 # platform stubs and the ARM helper runtime; there is no Clang C compilation.

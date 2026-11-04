@@ -12,18 +12,23 @@ var native = ARGV[1]
 var output = ARGV[2]
 var abi = 'armeabi-v7a'
 if (len(ARGV) === 4) { setvar abi = ARGV[3] }
-test "$abi" = armeabi-v7a || test "$abi" = arm64-v8a
+test "$abi" = armeabi-v7a || test "$abi" = arm64-v8a || test "$abi" = x86_64
 test -f "$packaging/apk/build-nativeactivity-apk.sh"
 var source_commit = ENV.ANDROID_SOURCE_COMMIT
+var runtime = ENV.FC_GREASE
 test $(git -C "$repository" rev-parse HEAD) = "$source_commit"
 git -C "$repository" diff --quiet HEAD -- android third-party scripts/package-native.grease
-test $(git -C "$packaging" rev-parse HEAD) = 32daa084390733d5b90cdec3157646832c75a3ad
+test $(git -C "$packaging" rev-parse HEAD) = b2ee19121aa3fa1112cd8338b7b6a7baca237b5f
 git -C "$packaging" diff --quiet HEAD -- apk/build-nativeactivity-apk.sh
 # The maintained foreign packager is Bash source (not executable in its tree).
 var epoch = $(git -C "$repository" log -1 --format=%ct)
-env "SOURCE_DATE_EPOCH=$epoch" "ANDROID_ASSET_DIR=$repository/third-party" bash "$packaging/apk/build-nativeactivity-apk.sh" "$repository/android/AndroidManifest.xml" "$native" "$abi" "$output"
+env "SOURCE_DATE_EPOCH=$epoch" "ANDROID_EXPECTED_SOURCE_DATE_EPOCH=$epoch" \
+  "ANDROID_ASSET_DIR=$repository/third-party" "ANDROID_REQUIRE_NO_DEX=0" \
+  "ANDROID_DEX_FILE=$packaging/native/presentation/Action.dex" "ANDROID_GREASE=$runtime" \
+  ANDROID_EXPECTED_LABEL=FastChat \
+  bash "$packaging/apk/build-nativeactivity-apk.sh" "$repository/android/AndroidManifest.xml" "$native" "$abi" "$output"
 var sdk = ENV.ANDROID_BUILD_TOOLS
 sha256sum "$packaging/apk/build-nativeactivity-apk.sh" "$sdk/aapt2" "$sdk/zipalign" "$sdk/apksigner" "$sdk/lib/apksigner.jar" > "$output.packaging-digests.txt"
-printf '%s\t%s\n' packager_commit 32daa084390733d5b90cdec3157646832c75a3ad source_epoch "$epoch" > "$output.packaging-identity.tsv"
+printf '%s\t%s\n' packager_commit b2ee19121aa3fa1112cd8338b7b6a7baca237b5f source_epoch "$epoch" > "$output.packaging-identity.tsv"
 "$sdk/aapt2" version >> "$output.packaging-identity.tsv"
 "$sdk/apksigner" version >> "$output.packaging-identity.tsv"

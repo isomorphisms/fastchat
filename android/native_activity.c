@@ -5,6 +5,8 @@
 #include "transport_boundary.h"
 #include "settings.h"
 #include "page_controls.h"
+#include "timeline_projection.h"
+#include "material.h"
 #include <android/input.h>
 #include <android/log.h>
 #include <android/looper.h>
@@ -14,6 +16,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <jni.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,9 +27,13 @@
 #ifndef FC_SOURCE_REVISION
 #define FC_SOURCE_REVISION "UNBOUND"
 #endif
+#ifndef FC_CANVAS_REFERENCE
+#define FC_CANVAS_REFERENCE 0
+#endif
 
-/* Platform widgets provide the IME. Canvas/Paint consumes a bounded stored
-   window. No application DEX or response-sized allocation is required. */
+/* Framework Views present a bounded stored window and provide the IME.
+   The typed listener DEX dispatches commands to this existing controller;
+   Canvas/Paint remains an explicitly selected comparison lane. */
 typedef struct {
     ANativeActivity *activity;
     ANativeWindow *window;
@@ -34,6 +41,17 @@ typedef struct {
     ALooper *looper;
     jobject composer;
     jobject composer_manager, composer_layout;
+    jobject native_panel, native_listener, native_status, native_prompt, native_response, native_range, native_send;
+    jobject native_page_buttons[FC_PAGE_BUTTONS];
+    jobject native_history_buttons[3];
+    jobject native_context[FC_CONTEXT_TURNS][3], native_scroll;
+    uint64_t native_context_requests[FC_CONTEXT_TURNS], native_context_focus;
+    int native_scroll_pending;
+    TimelineProjection timeline;
+    unsigned char native_response_bytes[FC_VIEW_BYTES];
+    size_t native_response_length;
+    M3Theme theme;
+    uint64_t native_revision, native_request, native_offset;
     int composer_attached;
     jobject settings_panel, settings_layout, settings_fields[6];
     int settings_visible, settings_attached, configuration_failure, acceptance;
@@ -62,6 +80,8 @@ typedef struct {
     int touch_down, pressed_button;
     char message[160], page_notice[80];
 } Presentation;
+enum { UI_PREVIOUS_TURN ← 101, UI_NEXT_TURN, UI_LATEST_TURN, UI_SETUP,
+       UI_SEND, UI_SAVE, UI_CLOSE, UI_PAGE_FIRST ← 201, UI_CONTEXT_FIRST ← 301 };
 
 static void show_settings(Presentation *);
 static void save_settings(Presentation *);
@@ -69,6 +89,8 @@ static void close_settings(Presentation *);
 static void attach_settings(Presentation *);
 static void detach_settings(Presentation *);
 static void persist_draft(Presentation *);
+static void material_present(Presentation *);
+static void material_destroy(Presentation *);
 
 static uint64_t monotonic_ns(void) {
     struct timespec time;
@@ -130,6 +152,36 @@ static jmethodID method(JNIEnv *environment, jobject object, const char *name, c
     jmethodID result ← (*environment)->GetMethodID(environment, type, name, signature);
     (*environment)->DeleteLocalRef(environment, type);
     return result;
+}
+/* Framework controls belong to the Activity's content hierarchy. A separate
+ * application-panel window can be visible while accessibility still exposes
+ * only NativeActivity's empty surface (observed on API34). The Canvas comparison
+ * retains its established window path; neither path changes controller state. */
+static int activity_content_attach(Presentation *p, jobject view) {
+    JNIEnv *e ← p->activity->env;
+    if ((*e)->PushLocalFrame(e, 12) < 0) return 0;
+    jobject content ← (*e)->CallObjectMethod(e, p->activity->clazz,
+        method(e, p->activity->clazz, "findViewById", "(I)Landroid/view/View;"), 0x01020002);
+    jobject parent ← (*e)->CallObjectMethod(e, view, method(e, view, "getParent", "()Landroid/view/ViewParent;"));
+    int attached ← content && parent && (*e)->IsSameObject(e, parent, content);
+    if (content && !parent && !(*e)->ExceptionCheck(e)) {
+        jclass type ← (*e)->FindClass(e, "android/widget/FrameLayout$LayoutParams");
+        jobject layout ← (*e)->NewObject(e, type, (*e)->GetMethodID(e, type, "<init>", "(II)V"), -1, -1);
+        (*e)->CallVoidMethod(e, content, method(e, content, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V"), view, layout);
+        attached ← !(*e)->ExceptionCheck(e);
+    }
+    if (clear_java_failure(p, e)) attached ← 0;
+    (*e)->PopLocalFrame(e, NULL);
+    return attached;
+}
+static void activity_content_detach(Presentation *p, jobject view) {
+    JNIEnv *e ← p->activity->env;
+    if ((*e)->PushLocalFrame(e, 8) < 0) return;
+    jobject parent ← (*e)->CallObjectMethod(e, view, method(e, view, "getParent", "()Landroid/view/ViewParent;"));
+    if (parent && !(*e)->ExceptionCheck(e))
+        (*e)->CallVoidMethod(e, parent, method(e, parent, "removeView", "(Landroid/view/View;)V"), view);
+    clear_java_failure(p, e);
+    (*e)->PopLocalFrame(e, NULL);
 }
 static void bound_editor(JNIEnv *environment, jobject editor, int length) {
     jclass filter_type ← (*environment)->FindClass(environment, "android/text/InputFilter");
@@ -312,6 +364,7 @@ static void draw_page_button(JNIEnv *environment, jobject canvas, jobject paint,
     (*environment)->DeleteLocalRef(environment, text);
 }
 static void present_stored_response(Presentation *presentation) {
+    if (!FC_CANVAS_REFERENCE) { material_present(presentation); return; }
     if (!presentation->window) return;
     JNIEnv *environment ← presentation->activity->env;
     if ((*environment)->PushLocalFrame(environment, 64) < 0) return;
@@ -450,21 +503,34 @@ static void present_stored_response(Presentation *presentation) {
     }
     (*environment)->PopLocalFrame(environment, NULL);
 }
-/* NativeActivity takes the main surface AND input queue. A child of its
-   DecorView cannot draw or receive normal widget dispatch. An attached panel
-   has its own ViewRoot/surface/input queue; outside touches still reach the
-   native reader and Send/Stop targets. It needs no application DEX. */
+/* The framework lane releases NativeActivity's surface/input claims before
+   Decor attachment. Its controls then use the actual Activity ViewRoot. The
+   Canvas comparison retains native ownership and its attached editor panel. */
 static void detach_composer(Presentation *presentation) {
     if (!presentation->composer_attached) return;
+    if (presentation->native_panel) {
+        activity_content_detach(presentation, presentation->native_panel);
+        presentation->composer_attached ← 0;
+        return;
+    }
     JNIEnv *environment ← presentation->activity->env;
     (*environment)->CallVoidMethod(environment, presentation->composer_manager,
-        method(environment, presentation->composer_manager, "removeViewImmediate", "(Landroid/view/View;)V"), presentation->composer);
+        method(environment, presentation->composer_manager, "removeViewImmediate", "(Landroid/view/View;)V"),
+        presentation->native_panel ? presentation->native_panel : presentation->composer);
     clear_java_failure(presentation, environment);
     presentation->composer_attached ← 0;
 }
 static void attach_composer(Presentation *presentation) {
     if (presentation->settings_visible) { attach_settings(presentation); return; }
-    if (!presentation->composer || presentation->composer_attached || !presentation->window) return;
+    if (!FC_CANVAS_REFERENCE && !presentation->native_panel) return;
+    if (!presentation->composer || presentation->composer_attached) return;
+    if (presentation->native_panel) {
+        presentation->composer_attached ← activity_content_attach(presentation, presentation->native_panel);
+        if (presentation->composer_attached)
+            __android_log_print(ANDROID_LOG_INFO, "FastChat", "composer_layer=activity-content");
+        return;
+    }
+    if (!presentation->window) return;
     JNIEnv *environment ← presentation->activity->env;
     if ((*environment)->PushLocalFrame(environment, 12) < 0) return;
     jobject activity ← presentation->activity->clazz;
@@ -473,7 +539,7 @@ static void attach_composer(Presentation *presentation) {
     jobject token ← (*environment)->CallObjectMethod(environment, decor, method(environment, decor, "getWindowToken", "()Landroid/os/IBinder;"));
     if (!clear_java_failure(presentation, environment) && token) {
         int width ← (*environment)->CallIntMethod(environment, decor, method(environment, decor, "getWidth", "()I"));
-        int available ← width - (int)(104*presentation->density);
+        int available ← presentation->native_panel ? width : width - (int)(104*presentation->density);
         if (available > 0) {
             jclass layout_type ← (*environment)->GetObjectClass(environment, presentation->composer_layout);
             (*environment)->SetObjectField(environment, presentation->composer_layout,
@@ -482,7 +548,7 @@ static void attach_composer(Presentation *presentation) {
                 (*environment)->GetFieldID(environment, layout_type, "width", "I"), available);
             (*environment)->CallVoidMethod(environment, presentation->composer_manager,
                 method(environment, presentation->composer_manager, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V"),
-                presentation->composer, presentation->composer_layout);
+                presentation->native_panel ? presentation->native_panel : presentation->composer, presentation->composer_layout);
             if (!clear_java_failure(presentation, environment)) {
                 presentation->composer_attached ← 1;
                 __android_log_print(ANDROID_LOG_INFO, "FastChat", "composer_layer=attached width=%d height=%d", available, (int)(64*presentation->density));
@@ -791,7 +857,10 @@ static int on_tick(int descriptor, int events, void *context) {
         presentation->draft_check_ns ← draft_now;
         persist_draft(presentation);
     }
-    if (!presentation->running) return 1;
+    if (!presentation->running) {
+        if (!FC_CANVAS_REFERENCE) material_present(presentation);
+        return 1;
+    }
     Result result ← FC_OK;
     if (presentation->http2) {
         result ← transport_boundary_poll(&presentation->network);
@@ -868,16 +937,23 @@ static void content_changed(ANativeActivity *activity, const ARect *rectangle) {
         attach_settings(presentation);
         present_stored_response(presentation); return;
     }
+    if (presentation->native_panel) {
+        /* MATCH_PARENT follows the Activity's normal resize/IME insets. Do not
+         * apply WindowManager panel parameters to an ordinary content child. */
+        attach_composer(presentation);
+        present_stored_response(presentation); return;
+    }
     /* Reattach against the new parent frame after resize/IME/rotation. */
     if (presentation->composer_attached) {
         JNIEnv *environment ← activity->env;
         jclass layout_type ← (*environment)->GetObjectClass(environment, presentation->composer_layout);
-        int available ← rectangle->right - rectangle->left - (int)(104*presentation->density);
+        int available ← rectangle->right - rectangle->left - (presentation->native_panel ? 0 : (int)(104*presentation->density));
         if (available > 0) {
             (*environment)->SetIntField(environment, presentation->composer_layout,
                 (*environment)->GetFieldID(environment, layout_type, "width", "I"), available);
             (*environment)->CallVoidMethod(environment, presentation->composer_manager,
-                method(environment, presentation->composer_manager, "updateViewLayout", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V"), presentation->composer, presentation->composer_layout);
+                method(environment, presentation->composer_manager, "updateViewLayout", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V"),
+                presentation->native_panel ? presentation->native_panel : presentation->composer, presentation->composer_layout);
         }
         (*environment)->DeleteLocalRef(environment, layout_type);
         clear_java_failure(presentation, environment);
@@ -931,6 +1007,7 @@ static void destroyed(ANativeActivity *activity) {
     Presentation *presentation ← activity->instance;
     detach_settings(presentation);
     detach_composer(presentation);
+    material_destroy(presentation);
     if (presentation->http2) transport_boundary_close(&presentation->network);
     else if (presentation->running && !presentation->conversation.poisoned) fixture_transport_lost(&presentation->transport);
     if (presentation->timer >= 0) { ALooper_removeFd(presentation->looper, presentation->timer); close(presentation->timer); }
@@ -1004,6 +1081,7 @@ static Result configure_legacy_transport(Presentation *presentation) {
     return result;
 }
 #include "provider_setup.inc"
+#include "material_panel.inc"
 static int acceptance_intent(Presentation *presentation, char *store, size_t capacity, char *fixture) {
     JNIEnv *environment ← presentation->activity->env;
     if ((*environment)->PushLocalFrame(environment, 12) < 0) return -1;
@@ -1085,7 +1163,17 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved, size_t sav
         presentation->configuration_failure ← 1;
         report_problem(presentation, "Explicit transport profile unavailable; submission disabled");
     }
+    if (!FC_CANVAS_REFERENCE && !m3_framework_window(activity->env, activity->clazz)) {
+        presentation->failure ← 1;
+        clear_java_failure(presentation, activity->env);
+        report_problem(presentation, "Framework window ownership unavailable");
+        ANativeActivity_finish(activity);
+        return;
+    }
+    if (!FC_CANVAS_REFERENCE)
+        __android_log_print(ANDROID_LOG_INFO, "FastChat", "framework_window=normal-view-surface-and-input");
     create_composer(presentation);
+    if (!FC_CANVAS_REFERENCE) create_material_panel(presentation);
     jchar disk_draft[4096];
     size_t disk_draft_size ← 0;
     if (!acceptance && !saved && private_file_read(activity->internalDataPath, "composer.draft",

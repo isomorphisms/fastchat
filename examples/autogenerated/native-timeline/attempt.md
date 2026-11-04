@@ -1,0 +1,79 @@
+# Bounded native conversation timeline
+
+The existing `HistoryTurn` is the semantic input: request/attempt identity,
+phase, exact prompt bytes, provider identity and the response arena interval.
+The presentation projects the three preceding turns in increasing request
+order beside the selected turn. It owns no journal, serializer or transport.
+Earlier responses are explicitly bounded previews; a real Button opens the
+existing full-response paging controller. TextViews retain exact Unicode text
+and framework selection. An empty response remains empty rather than invented.
+
+The platform worker receives a value copy of `Conversation` restricted to its
+published journal prefix. Existing `history_turn` and `read_history_window`
+use positional reads and only that copy. It borrows file descriptors until a
+joined shutdown before the controller closes them. No JNI or renderer work
+runs on the worker. The UI never waits for a busy projection mutex: it retries
+at a later tick. A monotonically increasing projection revision discards
+superseded work before publication; a focus change immediately retires old
+Button identities. Each Activity has a separate projection owner.
+
+Desired interface: `project : committed history × focused request → bounded
+ordered previous turns`, with errors distinct from empty history. No new
+Idriç language feature or fallback is needed: the existing typed history
+authority is reused, and C is confined to the established Android platform
+worker/JNI adapter. This is not a new conversation model.
+
+The worker has fixed memory: three 1024-byte response previews and the existing
+bounded prompt records. Nine context Views are allocated once, then reused.
+Streaming beyond an unchanged active page preserves its View and selection.
+Unchanged ticks no longer reread the visible response from disk. Full
+virtualized history, Markdown, Share, attachment presentation, controller/store
+I/O migration, IME and physical performance qualification remain unfinished.
+
+Qualification must compile this actual platform code through the existing
+ICK producer, exercise the signed APK on API 29/34 and independently inspect
+ordered prior roles/text and navigation. Source inspection is not execution.
+
+The independent API34 replay at ai-ci 2c6c1339 / FastChat 0c5288a2 retained
+an accessibility tree containing only the NativeActivity FrameLayout/surface,
+while the framework application-panel controls were attached and generation
+continued. The earlier screenshot is not the failure-time hierarchy. The repair
+puts both the Material panel and provider settings in android.R.id.content with
+ordinary FrameLayout parameters. Resize/IME follows that Activity hierarchy;
+the native Canvas comparison keeps its existing window path. Controllers,
+stores, credentials, semantic actions and checked callback DEX are unchanged.
+The same independent composer/timeline assertions remain required on both APIs.
+
+Provider settings now apply FLAG_SECURE to their actual owning Activity before
+attaching any credential editor. That Activity stays secure until destruction
+so a retained surface buffer cannot expose credentials immediately after Close.
+The existing password input masking and settings/draft ownership are preserved.
+The independent observer opens settings in a fresh ordinary emulator Activity,
+requires its real Save Button in that decor tree with FLAG_SECURE, and closes
+back to the composer without saving configuration or sending a provider request.
+# Actual framework surface and key input
+
+Source d7b159b3 compiled and linked the handoff through the actual ICK/NDK path
+for all three ABIs. Its repeat packaging correctly refused because the separate
+package-native coordinator still required the old immutable packager source.
+The coordinator's exact identity check and emitted identity are now updated to
+the same b2ee1912 source as the workflow checkout; the guard is not removed.
+
+Independent IME testing at ai-ci709e95a7 reached a visible keyboard and resized
+layout on API29, then key injection timed out because InputDispatcher had no
+focused application window. The captured application surface was black. The
+earlier bdae cold screenshots on both APIs were also black: accessibility-only
+control tests had not established visible drawing.
+
+Android10's public Window contract explicitly says takeSurface prevents the View
+hierarchy from drawing and takeInputQueue transfers event dispatch. NativeActivity
+claims both before invoking the native onCreate entrypoint. The framework lane
+now uses android-NDK's pre-attachment handoff to release those callbacks, keeping
+the existing native lifecycle/controller and actual framework ViewRoot. The
+Canvas comparison retains its native ownership. A late/failed handoff refuses
+startup, without an alternative renderer or state owner.
+
+The previous bdae candidate is superseded for visible UI qualification. The new
+head requires its own ICK compilation, reproducible signed APKs, compositor-frame
+proof, actual IME/key/Back exercises, and prior semantic/negative tests. No
+physical C67 responsiveness claim follows from these emulator results.
