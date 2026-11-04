@@ -87,7 +87,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: isomorphisms/ai-ci
-          ref: 21d19a83ccec345be98c074ef439bf84ee4c6c81
+          ref: 0293230005b70bde26108e8ae5803512b52072cd
           path: independent-timeline
           persist-credentials: false
       - name: Actual worker, source order and stale publication mutations
