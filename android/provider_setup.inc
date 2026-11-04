@@ -192,7 +192,7 @@ static void show_settings(Presentation *presentation) {
             m3_add(environment, controls, close, 0, -2, 1.0f);
             m3_add(environment, linear, controls, -1, -2, 0.0f);
         }
-        (*environment)->CallVoidMethod(environment, scroll, method(environment, scroll, "setBackgroundColor", "(I)V"), (jint)0xfff6f2e9);
+        (*environment)->CallVoidMethod(environment, scroll, method(environment, scroll, "setBackgroundColor", "(I)V"), (jint)CHARCOAL_BACKGROUND);
         const char *labels[] ← {"HTTPS origin", "Endpoint path", "Model", "Format: chat-completions or responses",
             "Authorization header (optional)", "CA: system or an absolute PEM path"};
         for (unsigned index ← 0; index < 6; index++) {

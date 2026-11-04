@@ -68,7 +68,7 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           repository: isomorphisms/android-NDK
-          ref: b2ee19121aa3fa1112cd8338b7b6a7baca237b5f
+          ref: 3e682fb1175beef5625dbd2418730220e49fc9bd
           path: packaging
           persist-credentials: false
       - name: Producer SDK

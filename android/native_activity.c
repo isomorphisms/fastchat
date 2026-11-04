@@ -347,12 +347,12 @@ static void draw_page_button(JNIEnv *environment, jobject canvas, jobject paint,
                              FcPageRect rect, const char *label, float density, int disabled, int pressed) {
     if (rect.right <= rect.left) return;
     (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setColor", "(I)V"),
-        (jint)(pressed ? 0xff345675 : disabled ? 0xffdedfdd : 0xffd5e4e8));
+        (jint)(pressed ? CHARCOAL_INTERACTIVE : CHARCOAL_SURFACE));
     (*environment)->CallVoidMethod(environment, canvas,
         method(environment, canvas, "drawRoundRect", "(FFFFFFLandroid/graphics/Paint;)V"),
         rect.left, rect.top, rect.right, rect.bottom, 7*density, 7*density, paint);
     (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setColor", "(I)V"),
-        (jint)(pressed ? 0xffffffff : disabled ? 0xff737373 : 0xff222c32));
+        (jint)(disabled ? CHARCOAL_DISABLED : CHARCOAL_TEXT));
     (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setTextSize", "(F)V"), 14*density);
     jstring text ← (*environment)->NewStringUTF(environment, label);
     float label_width ← (*environment)->CallFloatMethod(environment, paint,
@@ -380,11 +380,11 @@ static void present_stored_response(Presentation *presentation) {
     float density ← presentation->density;
     int bottom ← presentation->content_bottom > 0 && presentation->content_bottom < presentation->height
         ? presentation->content_bottom : presentation->height;
-    (*environment)->CallVoidMethod(environment, canvas, method(environment, canvas, "drawColor", "(I)V"), (jint)0xfff6f2e9);
+    (*environment)->CallVoidMethod(environment, canvas, method(environment, canvas, "drawColor", "(I)V"), (jint)CHARCOAL_BACKGROUND);
     jclass paint_type ← (*environment)->FindClass(environment, "android/graphics/Paint");
     jobject paint ← (*environment)->NewObject(environment, paint_type,
         (*environment)->GetMethodID(environment, paint_type, "<init>", "(I)V"), 1);
-    (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setColor", "(I)V"), (jint)0xff24282b);
+    (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setColor", "(I)V"), (jint)CHARCOAL_TEXT);
     if (presentation->settings_visible) {
         draw_label(environment, canvas, paint, "Provider setup | API access", 16*density, 28*density, 18*density);
         draw_label(environment, canvas, paint, "Use your provider's API key and model name.", 16*density, 52*density, 13*density);
@@ -465,7 +465,7 @@ static void present_stored_response(Presentation *presentation) {
             fc_page_rect(presentation->width, density, button), page_labels[button],
             density, disabled, presentation->pressed_button == button);
     }
-    (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setColor", "(I)V"), (jint)0xff24282b);
+    (*environment)->CallVoidMethod(environment, paint, method(environment, paint, "setColor", "(I)V"), (jint)CHARCOAL_TEXT);
     if (presentation->message[0])
         draw_label(environment, canvas, paint, presentation->message, 16*density, bottom - 112*density, 13*density);
     if (presentation->page_notice[0] && !presentation->page.next_page_available)
@@ -578,8 +578,8 @@ static void create_composer(Presentation *presentation) {
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setMaxLines", "(I)V"), 3);
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setImeOptions", "(I)V"), 0x10000000); /* no fullscreen extraction */
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setTextSize", "(F)V"), 18.0);
-    (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setTextColor", "(I)V"), (jint)0xff24282b);
-    (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setBackgroundColor", "(I)V"), (jint)0xffe4e6df);
+    (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setTextColor", "(I)V"), (jint)CHARCOAL_TEXT);
+    (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setBackgroundColor", "(I)V"), (jint)CHARCOAL_SURFACE);
     jstring hint ← (*environment)->NewStringUTF(environment, "Message");
     (*environment)->CallVoidMethod(environment, edit, method(environment, edit, "setHint", "(Ljava/lang/CharSequence;)V"), hint);
     jclass layout_type ← (*environment)->FindClass(environment, "android/view/WindowManager$LayoutParams");
