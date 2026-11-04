@@ -1,63 +1,9 @@
 /* The product surface uses real framework Views in its own ViewRoot. Android's
  * NativeActivity surface remains an explicitly selected Canvas comparator. */
 static Presentation *material_owner;
-/* The UI lends an immutable committed journal prefix, not its mutable controller.
- * history_turn/read_history_window use pread; the worker never seeks, appends,
- * opens another store or calls Android. Join precedes closing the lent fds. */
-static void *timeline_read(void *argument) {
-    TimelineProjection *projection ← argument;
-    pthread_mutex_lock(&projection->lock);
-    for (;;) {
-        while (!projection->pending && !projection->stop)
-            pthread_cond_wait(&projection->changed, &projection->lock);
-        if (projection->stop) break;
-        Conversation source ← projection->source;
-        uint64_t focus ← projection->focus, revision ← projection->requested;
-        projection->pending ← 0;
-        pthread_mutex_unlock(&projection->lock);
-        TimelineTurn turns[FC_CONTEXT_TURNS];
-        memset(turns, 0, sizeof(turns));
-        size_t count ← focus > FC_CONTEXT_TURNS ? FC_CONTEXT_TURNS : focus ? (size_t)(focus - 1) : 0;
-        Result result ← FC_OK;
-        for (size_t i ← 0; i < count && result == FC_OK; i++) {
-            result ← history_turn(&source, focus - count + i, &turns[i].turn);
-            if (result == FC_OK) result ← read_history_window(&source, &turns[i].turn, 0,
-                turns[i].bytes, sizeof(turns[i].bytes), &turns[i].length);
-        }
-        pthread_mutex_lock(&projection->lock);
-        if (projection->requested == revision && !projection->stop) {
-            memcpy(projection->turns, turns, sizeof(turns));
-            projection->count ← result == FC_OK ? count : 0;
-            projection->result ← result; projection->completed ← revision; projection->ready ← 1;
-        }
-    }
-    pthread_mutex_unlock(&projection->lock);
-    return NULL;
-}
-static void timeline_start(Presentation *p) {
-    TimelineProjection *projection ← &p->timeline;
-    if (pthread_mutex_init(&projection->lock, NULL) != 0) return;
-    if (pthread_cond_init(&projection->changed, NULL) != 0) {
-        pthread_mutex_destroy(&projection->lock); return;
-    }
-    if (pthread_create(&projection->thread, NULL, timeline_read, projection) != 0) {
-        pthread_cond_destroy(&projection->changed); pthread_mutex_destroy(&projection->lock); return;
-    }
-    projection->started ← 1;
-}
-static void timeline_stop(Presentation *p) {
-    TimelineProjection *projection ← &p->timeline;
-    if (!projection->started) return;
-    pthread_mutex_lock(&projection->lock);
-    projection->stop ← 1; pthread_cond_signal(&projection->changed);
-    pthread_mutex_unlock(&projection->lock);
-    pthread_join(projection->thread, NULL);
-    pthread_cond_destroy(&projection->changed); pthread_mutex_destroy(&projection->lock);
-    projection->started ← 0;
-}
 static void material_destroy(Presentation *p) {
     if (material_owner == p) material_owner ← NULL;
-    timeline_stop(p);
+    timeline_stop(&p->timeline);
     JNIEnv *e ← p->activity->env;
     jobject references[] ← {p->native_panel, p->native_listener, p->native_status,
         p->native_prompt, p->native_response, p->native_range, p->native_send, p->native_scroll};
@@ -236,6 +182,7 @@ static void create_material_panel(Presentation *p) {
     p->native_status ← (*e)->NewGlobalRef(e, status);
     m3_describe(e, status, "FastChat generation status");
     jobject scroll ← m3_new(e, activity, "android/widget/ScrollView");
+    m3_describe(e, scroll, "Conversation timeline");
     jobject content ← m3_column(e, activity);
     p->native_scroll ← (*e)->NewGlobalRef(e, scroll);
     for (int i ← 0; i < FC_CONTEXT_TURNS; i++) {
@@ -299,7 +246,7 @@ static void create_material_panel(Presentation *p) {
     (*e)->SetIntField(e, p->composer_layout, (*e)->GetFieldID(e, layout_type, "gravity", "I"), 48); /* TOP */
     p->native_panel ← (*e)->NewGlobalRef(e, root);
     p->native_revision ← UINT64_MAX;
-    timeline_start(p);
+    timeline_start(&p->timeline);
     material_owner ← p;
     clear_java_failure(p, e);
     (*e)->PopLocalFrame(e, NULL);

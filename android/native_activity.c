@@ -5,6 +5,7 @@
 #include "transport_boundary.h"
 #include "settings.h"
 #include "page_controls.h"
+#include "timeline_projection.h"
 #include "material.h"
 #include <android/input.h>
 #include <android/log.h>
@@ -33,24 +34,6 @@
 /* Framework Views present a bounded stored window and provide the IME.
    The typed listener DEX dispatches commands to this existing controller;
    Canvas/Paint remains an explicitly selected comparison lane. */
-enum { FC_CONTEXT_TURNS ← 3 };
-typedef struct {
-    HistoryTurn turn;
-    unsigned char bytes[1024];
-    size_t length;
-} TimelineTurn;
-typedef struct {
-    pthread_t thread;
-    pthread_mutex_t lock;
-    pthread_cond_t changed;
-    int started, stop, pending, ready;
-    uint64_t requested, completed;
-    Conversation source;
-    uint64_t focus;
-    TimelineTurn turns[FC_CONTEXT_TURNS];
-    size_t count;
-    Result result;
-} TimelineProjection;
 typedef struct {
     ANativeActivity *activity;
     ANativeWindow *window;
