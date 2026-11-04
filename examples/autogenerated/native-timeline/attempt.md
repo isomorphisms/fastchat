@@ -33,3 +33,13 @@ I/O migration, IME and physical performance qualification remain unfinished.
 Qualification must compile this actual platform code through the existing
 ICK producer, exercise the signed APK on API 29/34 and independently inspect
 ordered prior roles/text and navigation. Source inspection is not execution.
+
+The independent API34 replay at ai-ci 2c6c1339 / FastChat 0c5288a2 retained
+an accessibility tree containing only the NativeActivity FrameLayout/surface,
+while the framework application-panel controls were attached and generation
+continued. The earlier screenshot is not the failure-time hierarchy. The repair
+puts both the Material panel and provider settings in android.R.id.content with
+ordinary FrameLayout parameters. Resize/IME follows that Activity hierarchy;
+the native Canvas comparison keeps its existing window path. Controllers,
+stores, credentials, semantic actions and checked callback DEX are unchanged.
+The same independent composer/timeline assertions remain required on both APIs.

@@ -114,6 +114,11 @@ static void set_field(Presentation *presentation, jobject field, const char *val
 }
 static void detach_settings(Presentation *presentation) {
     if (!presentation->settings_attached) return;
+    if (presentation->native_panel) {
+        activity_content_detach(presentation, presentation->settings_panel);
+        presentation->settings_attached ← 0;
+        return;
+    }
     JNIEnv *environment ← presentation->activity->env;
     (*environment)->CallVoidMethod(environment, presentation->composer_manager,
         method(environment, presentation->composer_manager, "removeViewImmediate", "(Landroid/view/View;)V"), presentation->settings_panel);
@@ -121,7 +126,12 @@ static void detach_settings(Presentation *presentation) {
     presentation->settings_attached ← 0;
 }
 static void attach_settings(Presentation *presentation) {
-    if (!presentation->settings_visible || !presentation->window || !presentation->settings_panel) return;
+    if (!presentation->settings_visible || !presentation->settings_panel) return;
+    if (presentation->native_panel) {
+        presentation->settings_attached ← activity_content_attach(presentation, presentation->settings_panel);
+        return;
+    }
+    if (!presentation->window) return;
     JNIEnv *environment ← presentation->activity->env;
     if ((*environment)->PushLocalFrame(environment, 12) < 0) return;
     jobject activity ← presentation->activity->clazz;

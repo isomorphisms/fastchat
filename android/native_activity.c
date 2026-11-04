@@ -153,6 +153,36 @@ static jmethodID method(JNIEnv *environment, jobject object, const char *name, c
     (*environment)->DeleteLocalRef(environment, type);
     return result;
 }
+/* Framework controls belong to the Activity's content hierarchy. A separate
+ * application-panel window can be visible while accessibility still exposes
+ * only NativeActivity's empty surface (observed on API34). The Canvas comparison
+ * retains its established window path; neither path changes controller state. */
+static int activity_content_attach(Presentation *p, jobject view) {
+    JNIEnv *e ← p->activity->env;
+    if ((*e)->PushLocalFrame(e, 12) < 0) return 0;
+    jobject content ← (*e)->CallObjectMethod(e, p->activity->clazz,
+        method(e, p->activity->clazz, "findViewById", "(I)Landroid/view/View;"), 0x01020002);
+    jobject parent ← (*e)->CallObjectMethod(e, view, method(e, view, "getParent", "()Landroid/view/ViewParent;"));
+    int attached ← content && parent && (*e)->IsSameObject(e, parent, content);
+    if (content && !parent && !(*e)->ExceptionCheck(e)) {
+        jclass type ← (*e)->FindClass(e, "android/widget/FrameLayout$LayoutParams");
+        jobject layout ← (*e)->NewObject(e, type, (*e)->GetMethodID(e, type, "<init>", "(II)V"), -1, -1);
+        (*e)->CallVoidMethod(e, content, method(e, content, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V"), view, layout);
+        attached ← !(*e)->ExceptionCheck(e);
+    }
+    if (clear_java_failure(p, e)) attached ← 0;
+    (*e)->PopLocalFrame(e, NULL);
+    return attached;
+}
+static void activity_content_detach(Presentation *p, jobject view) {
+    JNIEnv *e ← p->activity->env;
+    if ((*e)->PushLocalFrame(e, 8) < 0) return;
+    jobject parent ← (*e)->CallObjectMethod(e, view, method(e, view, "getParent", "()Landroid/view/ViewParent;"));
+    if (parent && !(*e)->ExceptionCheck(e))
+        (*e)->CallVoidMethod(e, parent, method(e, parent, "removeView", "(Landroid/view/View;)V"), view);
+    clear_java_failure(p, e);
+    (*e)->PopLocalFrame(e, NULL);
+}
 static void bound_editor(JNIEnv *environment, jobject editor, int length) {
     jclass filter_type ← (*environment)->FindClass(environment, "android/text/InputFilter");
     jclass limit_type ← (*environment)->FindClass(environment, "android/text/InputFilter$LengthFilter");
@@ -479,6 +509,11 @@ static void present_stored_response(Presentation *presentation) {
    native reader and Send/Stop targets. It needs no application DEX. */
 static void detach_composer(Presentation *presentation) {
     if (!presentation->composer_attached) return;
+    if (presentation->native_panel) {
+        activity_content_detach(presentation, presentation->native_panel);
+        presentation->composer_attached ← 0;
+        return;
+    }
     JNIEnv *environment ← presentation->activity->env;
     (*environment)->CallVoidMethod(environment, presentation->composer_manager,
         method(environment, presentation->composer_manager, "removeViewImmediate", "(Landroid/view/View;)V"),
@@ -489,7 +524,14 @@ static void detach_composer(Presentation *presentation) {
 static void attach_composer(Presentation *presentation) {
     if (presentation->settings_visible) { attach_settings(presentation); return; }
     if (!FC_CANVAS_REFERENCE && !presentation->native_panel) return;
-    if (!presentation->composer || presentation->composer_attached || !presentation->window) return;
+    if (!presentation->composer || presentation->composer_attached) return;
+    if (presentation->native_panel) {
+        presentation->composer_attached ← activity_content_attach(presentation, presentation->native_panel);
+        if (presentation->composer_attached)
+            __android_log_print(ANDROID_LOG_INFO, "FastChat", "composer_layer=activity-content");
+        return;
+    }
+    if (!presentation->window) return;
     JNIEnv *environment ← presentation->activity->env;
     if ((*environment)->PushLocalFrame(environment, 12) < 0) return;
     jobject activity ← presentation->activity->clazz;
@@ -894,6 +936,12 @@ static void content_changed(ANativeActivity *activity, const ARect *rectangle) {
     presentation->content_bottom ← rectangle->bottom;
     if (presentation->settings_visible) {
         attach_settings(presentation);
+        present_stored_response(presentation); return;
+    }
+    if (presentation->native_panel) {
+        /* MATCH_PARENT follows the Activity's normal resize/IME insets. Do not
+         * apply WindowManager panel parameters to an ordinary content child. */
+        attach_composer(presentation);
         present_stored_response(presentation); return;
     }
     /* Reattach against the new parent frame after resize/IME/rotation. */
