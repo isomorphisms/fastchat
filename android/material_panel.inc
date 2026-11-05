@@ -234,7 +234,7 @@ static void create_material_panel(Presentation *p) {
     jobject composer ← m3_new(e, activity, "android/widget/LinearLayout");
     (*e)->CallVoidMethod(e, p->composer, method(e, p->composer, "setTextColor", "(I)V"), p->theme.on_surface);
     (*e)->CallVoidMethod(e, p->composer, method(e, p->composer, "setBackgroundColor", "(I)V"), p->theme.container);
-    (*e)->CallVoidMethod(e, p->composer, method(e, p->composer, "setHintTextColor", "(I)V"), p->theme.outline);
+    (*e)->CallVoidMethod(e, p->composer, method(e, p->composer, "setHintTextColor", "(I)V"), p->theme.secondary);
     m3_describe(e, p->composer, "Message, multiline draft");
     m3_add(e, composer, p->composer, 0, -2, 3.0f);
     jobject send ← material_button(p, e, composer, UI_SEND, "Send", 1);
