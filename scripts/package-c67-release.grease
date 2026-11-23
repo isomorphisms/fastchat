@@ -1,0 +1,68 @@
+#!/usr/bin/env grease
+# Package an already qualified C67 native binary with a provisioned signer.
+# Run the ai-ci release-delivery verifier on the finished APK before delivery.
+set -eu -o pipefail
+if (len(ARGV) !== 3) {
+  echo 'usage: package-c67-release.grease ANDROID_NDK_REPOSITORY C67_PRODUCER_DIRECTORY OUTPUT_APK' >&2
+  exit 2
+}
+
+proc receipt_value(receipt, field) {
+  awk -F '\t' -v field="$field" '
+    $1 == field { count++; value = $2; valid = (NF == 2 && length($2) > 0) }
+    END { if (count != 1 || !valid) exit 1; print value }
+  ' "$receipt"
+}
+
+var repository = $(realpath "$(dirname "$0")/..")
+var packager = ARGV[0]
+var producer = ARGV[1]
+var output = ARGV[2]
+var source = ENV.ANDROID_SOURCE_COMMIT
+var certificate = ENV.ANDROID_EXPECTED_CERT_SHA256
+var sdk = ENV.ANDROID_BUILD_TOOLS
+var runtime = ENV.FC_GREASE
+var development_certificate = 'aa9151e3922fa4795987c3655bc7aa4712620f1d94c24a2075acd7b29d8ac86e'
+var package_receipt = "$producer/fastchat.receipt.tsv"
+var native_receipt = "$producer/native/source-binding.tsv"
+var apk = "$producer/fastchat.apk"
+var native_member = 'lib/arm64-v8a/libfastchat.so'
+
+printf '%s\n' "$source" | rg -q -x '[0-9a-f]{40}'
+printf '%s\n' "$certificate" | rg -q -x '[0-9a-f]{64}'
+if (certificate === development_certificate) {
+  echo 'The public FastChat development certificate cannot sign this package.' >&2
+  exit 1
+}
+test ! -e "$output"
+test ! -L "$output"
+test $(git -C "$repository" rev-parse HEAD) = "$source"
+test $(receipt_value "$package_receipt" source_commit) = "$source"
+test $(receipt_value "$native_receipt" source_commit) = "$source"
+test $(receipt_value "$package_receipt" abi) = arm64-v8a
+test $(receipt_value "$native_receipt" abi) = arm64-v8a
+test $(receipt_value "$package_receipt" package) = org.isomorphisms.fastchat.diskstreaming.arena
+test $(receipt_value "$package_receipt" signer_cert_sha256) = "$development_certificate"
+
+var apk_digest = $(receipt_value "$package_receipt" apk_sha256)
+var native_digest = $(receipt_value "$package_receipt" native_sha256)
+var version_code = $(receipt_value "$package_receipt" version_code)
+printf '%s\n' "$apk_digest" "$native_digest" | awk '!/^[0-9a-f]+$/ || length($0) != 64 { exit 1 }'
+printf '%s\n' "$version_code" | rg -q -x '[1-9][0-9]*'
+test $(sha256sum -- "$apk" | cut -d ' ' -f 1) = "$apk_digest"
+test $(unzip -Z -1 "$apk" | awk '/^lib\// && !/\/$/ { print }') = "$native_member"
+var signature = $("$sdk/apksigner" verify --print-certs "$apk")
+test $(printf '%s\n' "$signature" | sed -n 's/^Signer #[0-9]* certificate SHA-256 digest: //p') = "$development_certificate"
+
+umask 077
+var staging = $(mktemp -d)
+trap --add EXIT { rm -rf -- "$staging" }
+unzip -p "$apk" "$native_member" > "$staging/libfastchat.so"
+test $(sha256sum -- "$staging/libfastchat.so" | cut -d ' ' -f 1) = "$native_digest"
+strings "$staging/libfastchat.so" | awk -v source="$source" '$0 == source { found = 1 } END { exit !found }'
+
+# The distinct package allows the current installation and its data to stay in place.
+env ANDROID_PACKAGE_ID=org.isomorphisms.fastchat ANDROID_MIN_SDK=26 ANDROID_TARGET_SDK=34 \
+  ANDROID_VERSION_CODE="$version_code" \
+  "$runtime" "$repository/scripts/package-native.grease" "$packager" \
+  "$staging/libfastchat.so" "$output" arm64-v8a
