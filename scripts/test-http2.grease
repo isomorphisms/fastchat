@@ -13,7 +13,7 @@ var directory = $(dirname "$0")
 var repository = $(realpath "$directory/..")
 "$compiler" "-B$support/" -std=c11 -O2 -D_FILE_OFFSET_BITS=64 -Wall -Wextra -Werror \
   "-I$repository/src" "-I$repository/transport/native" "-I$repository/third-party/appendfat-arena" "-I$prefix/include" \
-  -ffunction-sections -fdata-sections @options "$repository/src/conversation.c" "$repository/src/provider.c" \
+  -ffunction-sections -fdata-sections @options "$repository/src/conversation.c" "$repository/src/provider.c" "$repository/src/settings.c" \
   "$repository/src/transport_boundary.c" "$repository/transport/native/curl_transport.c" \
   "$repository/transport/native/sse.c" "$repository/transport/native/provider_framing.c" \
   "$repository/tests/http2_boundary.c" -Wl,--gc-sections \

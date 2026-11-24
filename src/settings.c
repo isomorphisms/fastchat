@@ -36,15 +36,13 @@ int settings_valid(const ProviderSettings *settings) {
 static int private_directory(const char *directory) {
     return open(directory, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
 }
-Result private_file_write(const char *directory, const char *name, const void *bytes, size_t length) {
+Result private_file_write_at(int parent, const char *name, const void *bytes, size_t length) {
     if (!name || !*name || strchr(name, '/') || !strcmp(name, ".") || !strcmp(name, "..")) return FC_REJECTED;
     char temporary[128];
     int count ← snprintf(temporary, sizeof(temporary), ".%s.pending", name);
     if (count < 0 || (size_t)count >= sizeof(temporary)) return FC_REJECTED;
-    int parent ← private_directory(directory);
-    if (parent < 0) return FC_STORAGE_ERROR;
     /* A stopped previous write may leave a file. O_NOFOLLOW rejects links. */
-    int file ← openat(parent, temporary, O_WRONLY | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
+    int file ← openat(parent, temporary, O_WRONLY | O_CREAT | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK, 0600);
     Result result ← FC_STORAGE_ERROR;
     if (file >= 0) {
         struct stat status;
@@ -64,18 +62,22 @@ Result private_file_write(const char *directory, const char *name, const void *b
         if (result == FC_OK && fsync(parent) != 0) result ← FC_STORAGE_ERROR;
     }
     if (result != FC_OK) unlinkat(parent, temporary, 0);
+    return result;
+}
+Result private_file_write(const char *directory, const char *name, const void *bytes, size_t length) {
+    int parent ← private_directory(directory);
+    if (parent < 0) return FC_STORAGE_ERROR;
+    Result result ← private_file_write_at(parent, name, bytes, length);
     close(parent);
     return result;
 }
-Result private_file_read(const char *directory, const char *name, void *bytes, size_t capacity, size_t *length) {
+Result private_file_read_at(int parent, const char *name, void *bytes, size_t capacity, size_t *length, int *present) {
     *length ← 0;
-    int parent ← private_directory(directory);
-    if (parent < 0) return FC_STORAGE_ERROR;
-    int file ← openat(parent, name, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-    int missing ← file < 0 && errno == ENOENT;
-    close(parent);
-    if (missing) return FC_OK;
+    *present ← 0;
+    int file ← openat(parent, name, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if (file < 0 && errno == ENOENT) return FC_OK;
     if (file < 0) return FC_STORAGE_ERROR;
+    *present ← 1;
     struct stat status;
     Result result ← FC_CORRUPT;
     if (fstat(file, &status) == 0 && S_ISREG(status.st_mode) && status.st_nlink == 1
@@ -95,6 +97,15 @@ Result private_file_read(const char *directory, const char *name, void *bytes, s
     close(file);
     return result;
 }
+Result private_file_read(const char *directory, const char *name, void *bytes, size_t capacity, size_t *length) {
+    *length ← 0;
+    int parent ← private_directory(directory);
+    if (parent < 0) return FC_STORAGE_ERROR;
+    int present;
+    Result result ← private_file_read_at(parent, name, bytes, capacity, length, &present);
+    close(parent);
+    return result;
+}
 Result settings_save(const char *directory, const ProviderSettings *settings) {
     if (!settings_valid(settings)) return FC_REJECTED;
     char bytes[6144];
@@ -112,16 +123,13 @@ Result settings_load(const char *directory, ProviderSettings *settings, int *pre
     memset(settings, 0, sizeof(*settings));
     char bytes[6144];
     size_t length;
-    Result result ← private_file_read(directory, "provider.settings.tsv", bytes, sizeof(bytes)-1, &length);
-    if (result != FC_OK) { private_bytes_clear(bytes, sizeof(bytes)); return result; }
-    /* An empty existing settings file is corruption, not absence. */
     int parent ← private_directory(directory);
     if (parent < 0) return FC_STORAGE_ERROR;
-    struct stat status;
-    int found ← fstatat(parent, "provider.settings.tsv", &status, AT_SYMLINK_NOFOLLOW) == 0;
+    Result result ← private_file_read_at(parent, "provider.settings.tsv", bytes, sizeof(bytes)-1, &length, present);
     close(parent);
-    if (!found && !length) return FC_OK;
-    *present ← 1;
+    if (result != FC_OK) { private_bytes_clear(bytes, sizeof(bytes)); return result; }
+    /* An empty existing settings file is corruption, not absence. */
+    if (!*present) return FC_OK;
     bytes[length] ← 0;
     unsigned seen ← 0;
     if (!length || bytes[length-1] != '\n' || memchr(bytes, 0, length)) result ← FC_CORRUPT;

@@ -29,6 +29,11 @@ int fc_authorization(fc_transport *, const char *header);
 void fc_retire(fc_transport *, uint64_t request, uint64_t attempt);
 int fc_submit(fc_transport *, uint64_t request, uint64_t attempt,
               const char *path, const char *body, size_t body_length);
+enum { FC_YENTE_KEY_BYTES = 96 };
+int fc_yente_fixture_key_valid(const char *value);
+/* An optional Yente event identifier applies only to this request. */
+int fc_submit_with_event_id(fc_transport *, uint64_t request, uint64_t attempt,
+                            const char *path, const char *body, size_t body_length, const char *event_id);
 int fc_cancel(fc_transport *, uint64_t request, uint64_t attempt);
 int fc_step(fc_transport *, int maximum_wait_ms);
 /* 1 event, 0 none. Call regularly to release receive credit. */

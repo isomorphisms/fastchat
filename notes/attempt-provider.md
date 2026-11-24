@@ -26,6 +26,16 @@ automatic resend occurs. Older readers reject the extended attempt payload;
 this change does not claim downgrade compatibility. History still presents
 the most recent attempt of a request; earlier attempts remain in the journal.
 
+The Yente test fixture uses the same route and transport checks. Configure
+model `yente-mock`, the matching Chat Completions or Responses format, and
+`/v1/chat/completions/ROUTE` or `/v1/responses/ROUTE` on the fixture's TLS origin.
+Use the fictional route's own bearer token in the private authorization field.
+The transport adds `X-Yente-Event-ID` only for those model and path pairs. The
+identifier combines a random nonce stored in the journal directory with the
+durable request number. It survives a restart and a new attempt of the same
+request. The nonce is lazily created with mode 0600 and synchronized before the
+first fixture POST. A malformed nonce prevents that POST.
+
 This is application storage/transport work under the existing FastChat
 assignment and registered fastchat-mechanical-open source envelope. It does
 not implement authenticated FP dispatch, shared paired APK production, live

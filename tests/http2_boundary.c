@@ -1,10 +1,12 @@
 #define _GNU_SOURCE
 #include "transport_boundary.h"
 #include "transport.h"
+#include "settings.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -118,8 +120,81 @@ static void exercise_context(const char *origin, const char *ca, const char *roo
     }
     printf("PASS HTTP2 TLS two-turn durable replay/context %s\n", name);
 }
+static void yente_turn(TransportBoundary *boundary, const char *model, const char *path,
+                       ProviderRequestFormat format, int retry, Phase expected) {
+    Conversation *conversation ← boundary->provider.conversation;
+    boundary->request_format ← format;
+    AttemptProvider provider;
+    assert(transport_boundary_provider(boundary, model, path, &provider) == FC_OK);
+    if (retry) assert(retry_request_to(conversation, &provider) == FC_OK);
+    else assert(submit_text_to(conversation, "/wish tea", 9, &provider) == FC_OK);
+    assert(transport_boundary_send(boundary, model, path) == FC_OK);
+    uint64_t start ← now();
+    while (boundary->active || boundary->pending) {
+        assert(now() - start < 10000000000u);
+        assert(transport_boundary_poll(boundary) == FC_OK);
+        usleep(1000);
+    }
+    assert(conversation->phase == expected);
+}
+static void exercise_yente(const char *origin, const char *ca, const char *root, int restarted) {
+    char directory[4096], second[4096], corrupt[4096];
+    snprintf(directory, sizeof(directory), "%s/yente-first", root);
+    snprintf(second, sizeof(second), "%s/yente-second", root);
+    snprintf(corrupt, sizeof(corrupt), "%s/yente-corrupt", root);
+    const char *chat ← "/v1/chat/completions/fictional";
+    const char *responses ← "/v1/responses/fictional";
+    const char *authorization ← "Authorization: Bearer fixture-native-only-token";
+    Conversation conversation;
+    TransportBoundary boundary;
+    assert(conversation_open(&conversation, directory) == FC_OK);
+    assert(transport_boundary_open(&boundary, &conversation, origin, ca) == FC_OK);
+    assert(transport_boundary_authorization(&boundary, authorization) == FC_OK);
+    if (!restarted) {
+        assert(conversation.request == 0);
+        yente_turn(&boundary, "yente-mock", chat, PROVIDER_CHAT_COMPLETIONS, 0, UNCERTAIN);
+        yente_turn(&boundary, "yente-mock", chat, PROVIDER_CHAT_COMPLETIONS, 1, UNCERTAIN);
+        assert(conversation.request == 1 && conversation.attempt == 2);
+    } else {
+        assert(conversation.phase == UNCERTAIN && conversation.request == 1 && conversation.attempt == 2);
+        yente_turn(&boundary, "yente-mock", chat, PROVIDER_CHAT_COMPLETIONS, 1, COMPLETED);
+        yente_turn(&boundary, "yente-mock", responses, PROVIDER_RESPONSES, 0, COMPLETED);
+        yente_turn(&boundary, "fixture", chat, PROVIDER_CHAT_COMPLETIONS, 0, COMPLETED);
+        yente_turn(&boundary, "yente-mock", "/candidate-ordinary", PROVIDER_CHAT_COMPLETIONS, 0, COMPLETED);
+    }
+    char nonce_path[4096];
+    int name_size ← snprintf(nonce_path, sizeof(nonce_path), "%s/yente-journal-nonce", directory);
+    assert(name_size > 0 && (size_t)name_size < sizeof(nonce_path));
+    struct stat nonce;
+    assert(stat(nonce_path, &nonce) == 0 && (nonce.st_mode & 0777) == 0600 && nonce.st_size == 32);
+    transport_boundary_close(&boundary);
+    conversation_close(&conversation);
+    if (!restarted) return;
+    assert(conversation_open(&conversation, second) == FC_OK);
+    assert(transport_boundary_open(&boundary, &conversation, origin, ca) == FC_OK);
+    assert(transport_boundary_authorization(&boundary, authorization) == FC_OK);
+    yente_turn(&boundary, "yente-mock", responses, PROVIDER_RESPONSES, 0, COMPLETED);
+    transport_boundary_close(&boundary);
+    conversation_close(&conversation);
+    assert(conversation_open(&conversation, corrupt) == FC_OK);
+    assert(private_file_write(corrupt, "yente-journal-nonce", "", 0) == FC_OK);
+    assert(transport_boundary_open(&boundary, &conversation, origin, ca) == FC_OK);
+    AttemptProvider provider;
+    assert(transport_boundary_provider(&boundary, "yente-mock", chat, &provider) == FC_OK);
+    assert(submit_text_to(&conversation, "/wish tea", 9, &provider) == FC_OK);
+    assert(transport_boundary_send(&boundary, "yente-mock", chat) == FC_CORRUPT && !boundary.active);
+    assert(fc_submit_with_event_id(boundary.engine, 1, 1, chat, "{}", 2, "not a valid token") != 0);
+    transport_boundary_close(&boundary);
+    conversation_close(&conversation);
+    puts("PASS Yente durable retry and new requests; damaged nonce and invalid header refused");
+}
 int main(int count, char **arguments) {
-    assert(count == 4);
+    assert(count == 4 || count == 5);
+    if (count == 5) {
+        assert(!strcmp(arguments[4], "yente-start") || !strcmp(arguments[4], "yente-restart"));
+        exercise_yente(arguments[1], arguments[2], arguments[3], !strcmp(arguments[4], "yente-restart"));
+        return 0;
+    }
     const char *names[] ← {"stream", "tool", "failure", "bad", "giant", "incomplete", "loss", "cancel", "slow", "responses", "usage"};
     Phase expected[] ← {COMPLETED, COMPLETED, FAILED, FAILED, FAILED, UNCERTAIN, UNCERTAIN, CANCELLED, COMPLETED, COMPLETED, COMPLETED};
     for (size_t index ← 0; index < sizeof(expected)÷sizeof(expected[0]); index ← index + 1)

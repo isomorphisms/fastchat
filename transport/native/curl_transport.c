@@ -119,10 +119,26 @@ void fc_retire(fc_transport *t, uint64_t request, uint64_t attempt) {
     if (t->requests[i].occupied && t->requests[i].request == request && t->requests[i].attempt == attempt)
       release(t, &t->requests[i]);
 }
+int fc_yente_fixture_key_valid(const char *value) {
+  if (!value || !*value) return 0;
+  size_t length = 0;
+  while (value[length]) {
+    unsigned char byte = (unsigned char)value[length++];
+    if (length > FC_YENTE_KEY_BYTES ||
+        !((byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') ||
+          (byte >= '0' && byte <= '9') || byte == '-' || byte == '_' || byte == '.')) return 0;
+  }
+  return strcmp(value, ".") && strcmp(value, "..");
+}
 int fc_submit(fc_transport *t, uint64_t request, uint64_t attempt,
               const char *path, const char *body, size_t length) {
+  return fc_submit_with_event_id(t, request, attempt, path, body, length, NULL);
+}
+int fc_submit_with_event_id(fc_transport *t, uint64_t request, uint64_t attempt,
+                            const char *path, const char *body, size_t length, const char *event_id) {
   if (!t || !path || path[0] != '/' || path[1] == '/' || !request || !attempt ||
-      (!body && length) || length > BODY_LIMIT) return -1;
+      (!body && length) || length > BODY_LIMIT ||
+      (event_id && !fc_yente_fixture_key_valid(event_id))) return -1;
   if (t->invalidate_cache) {
     int attached = 0;
     for (int i = 0; i < ACTIVE_LIMIT; ++i) attached += t->requests[i].attached;
@@ -149,6 +165,12 @@ int fc_submit(fc_transport *t, uint64_t request, uint64_t attempt,
   if (!headers) { release(t, s); return -1; } s->headers = headers;
   if (*t->authorization) {
     headers = curl_slist_append(s->headers, t->authorization);
+    if (!headers) { release(t, s); return -1; } s->headers = headers;
+  }
+  if (event_id) {
+    char event_header[sizeof("X-Yente-Event-ID: ") + FC_YENTE_KEY_BYTES];
+    snprintf(event_header, sizeof(event_header), "X-Yente-Event-ID: %s", event_id);
+    headers = curl_slist_append(s->headers, event_header);
     if (!headers) { release(t, s); return -1; } s->headers = headers;
   }
   headers = curl_slist_append(s->headers, "Accept-Encoding: identity");
