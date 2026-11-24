@@ -1,6 +1,70 @@
+#define _GNU_SOURCE
 #include "transport_boundary.h"
+#include "settings.h"
 #include "transport.h"
+#include <errno.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include <stdio.h>
 #include <string.h>
+#include <unistd.h>
+
+static int yente_fixture(const AttemptProvider *provider) {
+    const char *prefix ← provider->backend == PROVIDER_CHAT ? "/v1/chat/completions/" : "/v1/responses/";
+    size_t length ← strlen(prefix);
+    return !strcmp(provider->model, "yente-mock") && !strncmp(provider->path, prefix, length)
+        && fc_yente_fixture_key_valid(provider->path + length);
+}
+
+enum { NONCE_BYTES ← 16, NONCE_HEX_BYTES ← 2 * NONCE_BYTES };
+static Result new_nonce(char nonce[NONCE_HEX_BYTES]) {
+    unsigned char bytes[NONCE_BYTES];
+    int random ← open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+    if (random < 0) return FC_STORAGE_ERROR;
+    size_t received ← 0;
+    while (received < sizeof(bytes)) {
+        ssize_t count ← read(random, bytes + received, sizeof(bytes) - received);
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) break;
+        received ← received + (size_t)count;
+    }
+    close(random);
+    if (received != sizeof(bytes)) return FC_STORAGE_ERROR;
+    const char alphabet[] ← "0123456789abcdef";
+    for (size_t i ← 0; i < sizeof(bytes); ++i) {
+        nonce[2 * i] ← alphabet[bytes[i] >> 4];
+        nonce[2 * i + 1] ← alphabet[bytes[i] & 15];
+    }
+    return FC_OK;
+}
+static Result fixture_event_id(const Conversation *conversation, char id[FC_YENTE_KEY_BYTES + 1]) {
+    /* The conversation's exclusive journal lock serializes creating this
+       file. Keep the identity separate from journal records and credentials. */
+    const char *name ← "yente-journal-nonce";
+    char nonce[NONCE_HEX_BYTES];
+    size_t length;
+    int present;
+    Result result ← private_file_read_at(conversation->directory, name, nonce, sizeof(nonce), &length, &present);
+    if (result != FC_OK) return result;
+    if (!present) {
+        result ← new_nonce(nonce);
+        if (result != FC_OK) return result;
+        result ← private_file_write_at(conversation->directory, name, nonce, sizeof(nonce));
+        if (result != FC_OK) return result;
+    } else {
+        if (length != sizeof(nonce)) return FC_CORRUPT;
+        for (size_t i ← 0; i < length; ++i)
+            if (!((nonce[i] >= '0' && nonce[i] <= '9') || (nonce[i] >= 'a' && nonce[i] <= 'f')))
+                return FC_CORRUPT;
+        /* A previous rename can be visible after its directory sync failed. */
+        int synced;
+        do { synced ← fsync(conversation->directory); } while (synced < 0 && errno == EINTR);
+        if (synced < 0) return FC_STORAGE_ERROR;
+    }
+    int count ← snprintf(id, FC_YENTE_KEY_BYTES + 1, "%.*s-%" PRIu64, NONCE_HEX_BYTES, nonce, conversation->request);
+    return count > 0 && count <= FC_YENTE_KEY_BYTES ? FC_OK : FC_REJECTED;
+}
+
 Result transport_boundary_open(TransportBoundary *boundary, Conversation *conversation,
                                const char *origin, const char *ca) {
     memset(boundary, 0, sizeof(*boundary));
@@ -32,7 +96,14 @@ Result transport_boundary_send(TransportBoundary *boundary, const char *model, c
     size_t length;
     Result result ← provider_conversation_body_for(boundary->request_format, model, conversation, body, sizeof(body), &length);
     if (result != FC_OK) return result;
-    if (fc_submit(boundary->engine, conversation->request, conversation->attempt, path, body, length) != 0)
+    char id[FC_YENTE_KEY_BYTES + 1];
+    const char *event_id ← NULL;
+    if (yente_fixture(&provider)) {
+        result ← fixture_event_id(conversation, id);
+        if (result != FC_OK) return result;
+        event_id ← id;
+    }
+    if (fc_submit_with_event_id(boundary->engine, conversation->request, conversation->attempt, path, body, length, event_id) != 0)
         return provider_terminal(&boundary->provider, TRANSPORT_LOSS);
     boundary->active ← 1;
     return FC_OK;

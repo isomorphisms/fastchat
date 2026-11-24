@@ -71,6 +71,30 @@ const run = async (name, first, second, mode) => {
       assert.equal(status, 0, errors + output);
       assert.equal(serverLog.split('\n').filter(line => line.startsWith('request\t')).length, 17, 'eleven paths, two explicit retries, four two-turn context POSTs; no hidden POST retry');
       process.stdout.write(output);
+      for (const phase of ['yente-start', 'yente-restart']) {
+        const check = spawnSync(binary, [`https://localhost:${port}`, cert, directory, phase], {encoding: 'utf8'});
+        fs.appendFileSync(path.join(directory, 'boundary.log'), check.stdout + check.stderr);
+        assert.equal(check.status, 0, check.stdout + check.stderr);
+        process.stdout.write(check.stdout);
+      }
+      // The fixture streams its receipt while each client subprocess runs.
+      for (let elapsed = 0; elapsed < 100; elapsed++) {
+        if (serverLog.split('\n').filter(line => line.startsWith('yente\t')).length === 7) break;
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      const receipts = serverLog.split('\n').filter(line => line.startsWith('yente\t')).map(line => line.split('\t').slice(1));
+      assert.equal(receipts.length, 7);
+      const [first, retry, restart, next, generic, wrongPath, anotherJournal] = receipts;
+      assert.deepEqual(retry, first);
+      assert.deepEqual(restart, first);
+      assert.match(first[2], /^[0-9a-f]{32}-1$/);
+      assert.equal(next[2], first[2].slice(0, -1) + '2');
+      assert.deepEqual(generic, ['/v1/chat/completions/fictional', 'fixture', '-']);
+      assert.deepEqual(wrongPath, ['/candidate-ordinary', 'yente-mock', '-']);
+      assert.match(anotherJournal[2], /^[0-9a-f]{32}-1$/);
+      assert.notEqual(first[2], anotherJournal[2]);
+      assert.equal(serverLog.split('\n').filter(line => line.startsWith('request\t')).length, 24);
+      console.log('PASS Yente wire IDs survive retry and process restart, distinguish requests and journals, and stay out of ordinary requests');
       return;
     }
     await run('multiplex', '/stream', '/stream', 'normal');

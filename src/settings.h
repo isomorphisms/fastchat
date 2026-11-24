@@ -15,4 +15,7 @@ Result settings_load(const char *directory, ProviderSettings *, int *present);
 Result settings_save(const char *directory, const ProviderSettings *);
 Result private_file_write(const char *directory, const char *name, const void *, size_t);
 Result private_file_read(const char *directory, const char *name, void *, size_t, size_t *);
+/* The caller owns the open directory and serializes writers to this name. */
+Result private_file_write_at(int directory, const char *name, const void *, size_t);
+Result private_file_read_at(int directory, const char *name, void *, size_t, size_t *, int *present);
 #endif

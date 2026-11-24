@@ -44,7 +44,7 @@ jobs:
         with:
           repository: dilapidated-shed/grease
           run-id: 41253994123
-          artifact-ids: 13062637698
+          artifact-ids: 14771793976
           merge-multiple: true
           github-token: ${{ github.token }}
           path: grease
@@ -167,7 +167,7 @@ jobs:
         with:
           repository: dilapidated-shed/grease
           run-id: 41253994123
-          artifact-ids: 13062637698
+          artifact-ids: 14771793976
           merge-multiple: true
           github-token: ${{ github.token }}
           path: grease

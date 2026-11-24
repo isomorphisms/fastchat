@@ -6,6 +6,7 @@ const [cert, key, port] = process.argv.slice(2);
 const server = http2.createSecureServer({cert: fs.readFileSync(cert), key: fs.readFileSync(key), allowHTTP1: false});
 let connection = 0;
 const contextSteps = new Map();
+const yenteAttempts = new Map();
 const responseText = 'Idriç 🐈\n```lua\nreturn 1\n```\n';
 server.on('session', session => {
   const identity = ++connection;
@@ -20,6 +21,35 @@ server.on('stream', (stream, headers) => {
   let body = '';
   stream.on('data', bytes => { body += bytes; if (body.length > 65536) stream.close(http2.constants.NGHTTP2_CANCEL); });
   stream.on('end', async () => {
+    if (path === '/v1/chat/completions/fictional' || path === '/v1/responses/fictional' || path === '/candidate-ordinary') {
+      let request;
+      try { request = JSON.parse(body); } catch { stream.respond({':status': 400}); stream.end(); return; }
+      const responses = path === '/v1/responses/fictional';
+      const messages = request[responses ? 'input' : 'messages'];
+      const event = headers['x-yente-event-id'];
+      const fixture = request.model === 'yente-mock' && path !== '/candidate-ordinary';
+      const authorized = headers.authorization === 'Bearer fixture-native-only-token';
+      if (!Array.isArray(messages) || messages.at(-1)?.content !== '/wish tea' ||
+          messages.at(-1)?.role !== 'user' || !request.stream || !authorized ||
+          (fixture ? !/^[0-9a-f]{32}-[1-9][0-9]*$/.test(event) : event !== undefined)) {
+        stream.respond({':status': 400}); stream.end(); return;
+      }
+      console.log(`yente\t${path}\t${request.model}\t${event || '-'}`);
+      stream.respond({':status': 200, 'content-type': 'text/event-stream'});
+      if (fixture && !responses) {
+        const attempts = (yenteAttempts.get(event) || 0) + 1;
+        yenteAttempts.set(event, attempts);
+        if (attempts < 3) { stream.end('data: {"type":"response.output_text.delta"'); return; }
+      }
+      if (responses) {
+        stream.write('data: {"type":"response.output_text.delta","delta":"fictional reply"}\n\n');
+        stream.end('data: {"type":"response.completed","response":{"status":"completed"}}\n\n');
+      } else {
+        stream.write('data: {"choices":[{"index":0,"delta":{"content":"fictional reply"},"finish_reason":null}]}\n\n');
+        stream.end('data: [DONE]\n\n');
+      }
+      return;
+    }
     if (path.startsWith('/candidate-')) {
       let request;
       try { request = JSON.parse(body); } catch { stream.respond({':status': 400}); stream.end(); return; }
